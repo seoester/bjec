@@ -1,0 +1,13 @@
+argh
+pyyaml
+gitpython
+
+# For documentation
+sphinx
+sphinx-autobuild
+recommonmark
+sphinx_rtd_theme
+sphinxcontrib-napoleon
+
+# For upload
+twine

@@ -1,0 +1,5 @@
+__pycache__/
+bjec.egg-info/
+docs/_build/
+docs/_static/
+docs/_templates/
