@@ -5,3 +5,20 @@ python scripts.
 
 Originally drafted to assist performing a high number of experiments and
 pre-aggregating their results for later statistical evaluation.
+
+## Installation
+
+Requirements:
+
+ * Python 3
+ * Git executable
+
+Install from PyPi using
+
+	pip install bjec
+
+## Documentation
+
+Documentation and examples can be found on [Read the Docs][1].
+
+[1]: http://bjec.readthedocs.io/
