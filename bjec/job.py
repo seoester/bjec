@@ -2,6 +2,7 @@ import functools
 
 from .master import Runnable, Constructible, Artefactor, Dependency, WrapperRun
 from .master import master as global_master
+from .utils import listify
 
 
 def job(depends=None, master=None):
