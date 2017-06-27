@@ -9,5 +9,8 @@ recommonmark
 sphinx_rtd_theme
 sphinxcontrib-napoleon
 
+# For packaging
+wheel
+
 # For upload
 twine
