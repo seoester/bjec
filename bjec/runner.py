@@ -131,11 +131,16 @@ class InputMethod(object):
 
 
 class ProcessArgs(InputMethod):
-	"""docstring for ProcessArgs"""
+	"""docstring for ProcessArgs
+
+	Args:
+		*args (str, P): Arguments to execute the subprocess with. Supports
+			P wrappers.
+	"""
 
 	class Wrapper(InputMethod.Wrapper):
 		def __enter__(self):
-			l = P.evaluate_list(self.obj.args)
+			l = map(str, P.evaluate_list(self.obj.args, self.params))
 			if isinstance(self.args, str):
 				self.args += " " + " ".join(map(shlex.quote, l))
 			else:
