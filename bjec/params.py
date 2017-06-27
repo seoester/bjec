@@ -5,6 +5,9 @@ class ParamsEvaluable(object):
 	def evaluate(self, params):
 		raise NotImplemented
 
+	def __call__(self, params):
+		return self.evaluate(params)
+
 
 def evaluate(obj, params):
 	try:
@@ -12,7 +15,9 @@ def evaluate(obj, params):
 	except (AttributeError, TypeError) as e:
 		pass
 
-	if not isinstance(obj, str) and isinstance(obj, collections.Iterable):
+	if (not isinstance(obj, (str, dict)) and
+		isinstance(obj, collections.Iterable)
+	):
 		return (evaluate(i, params) for i in obj)
 
 	return obj
@@ -50,8 +55,6 @@ class P(ParamsEvaluable):
 		else:
 			return self.f(params[self.key])
 
-	__call__ = evaluate
-
 	@classmethod
 	def evaluate_list(cls, l, params):
 		r = list()
@@ -67,6 +70,10 @@ class P(ParamsEvaluable):
 
 class Join(ParamsEvaluable):
 	"""String / Byte Join for lists containing P objects.
+
+	Example:
+		::
+			Join("out.", P("n"), ".csv")
 
 	Args:
 		*args (object or P, must support str(.)): Elements to join, may be
@@ -84,3 +91,31 @@ class Join(ParamsEvaluable):
 			return self.sep.join(map(str, P.evaluate_list(self.args, params)))
 		else:
 			return self.sep.join(P.evaluate_list(self.args, params))
+
+
+class Factory(ParamsEvaluable):
+	"""Factory for objects with ParamsEvaluable arguments.
+
+	Example:
+		::
+
+			Factory(Concatenate, file_path=Join("out.", P("n"), ".data"))
+
+	Args:
+		cls (class object):
+		*args (arbitrary, ParamsEvaluable): Variable arguments passed to the
+			class constructor. May contain ParamsEvaluable elements.
+		**kwargs (arbitrary, ParamsEvaluable): Keyword arguments passed to the
+			class constructor. May contain ParamsEvaluable values.
+	"""
+	def __init__(self, cls, *args, **kwargs):
+		self.cls = cls
+		self.args = args
+		self.kwargs = kwargs
+
+	def evaluate(self, params):
+		args = evaluate(self.args, params)
+		kwargs = {
+			key: evaluate(value, params) for key, value in self.kwargs.items()
+		}
+		return self.cls(*args, **kwargs)
