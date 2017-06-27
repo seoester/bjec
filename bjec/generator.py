@@ -33,14 +33,35 @@ class Product(Generator):
 			yield dict(zip(self.params.keys(), c))
 
 
-class RepeatN(Generator):
+class Repeat(Generator):
 	def __init__(self, params, n):
-		super(RepeatN, self).__init__()
+		super(Repeat, self).__init__()
 		self.params = params
 		self.n = n
 
 	def __iter__(self):
 		return iter(itertools.repeat(self.params, self.n))
+
+
+class RepeatG(Generator):
+	def __init__(self, generator, n):
+		super(RepeatG, self).__init__()
+		self.generator = generator
+		self.n = n
+
+	def __iter__(self):
+		"""
+
+		Roughly equivalent to::
+
+			for params in self.generator:
+				for _ in range(self.n):
+					yield params
+
+		"""
+		return itertools.chain.from_iterable(
+			(itertools.repeat(params, self.n) for params in self.generator)
+		)
 
 
 class Chain(Generator):
