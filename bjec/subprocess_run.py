@@ -1,10 +1,37 @@
-from subprocess import PIPE, Popen, CalledProcessError, TimeoutExpired
+from subprocess import PIPE, Popen, TimeoutExpired, SubprocessError
 
 """
-The CompletedProcess class and the run function was copied from the python3.5
-subprocess module.
+The CalledProcessError and CompletedProcess classes and the run function was
+copied from the python3.5 subprocess module.
 https://github.com/python/cpython/blob/master/LICENSE
 """
+
+
+class CalledProcessError(SubprocessError):
+    """This exception is raised when a process run by check_call() or
+    check_output() returns a non-zero exit status.
+    The exit status will be stored in the returncode attribute;
+    check_output() will also store the output in the output attribute.
+    """
+    def __init__(self, returncode, cmd, output=None, stderr=None):
+        self.returncode = returncode
+        self.cmd = cmd
+        self.output = output
+        self.stderr = stderr
+
+    def __str__(self):
+        return "Command '%s' returned non-zero exit status %d" % (self.cmd, self.returncode)
+
+    @property
+    def stdout(self):
+        """Alias for output attribute, to match stderr"""
+        return self.output
+
+    @stdout.setter
+    def stdout(self, value):
+        # There's no obvious reason to set this, but allow it anyway so
+        # .stdout is a transparent alias for .output
+        self.output = value
 
 
 class CompletedProcess(object):
