@@ -2,6 +2,7 @@ import subprocess
 import shlex
 import tempfile
 
+from .params import P
 
 class Runner(object):
 	"""docstring for Runner"""
@@ -225,33 +226,3 @@ class Stdout(OutputMethod):
 		self.named = named
 		self.stdout = stdout
 		self.stderr = stderr
-
-
-class P(object):
-	"""Wrapper to allow intuitive parameter inclusion.
-
-	Helper for InputMethod inheriters."""
-
-	def __init__(self, key, f=None):
-		super(P, self).__init__()
-		self.key = key
-
-	def evaluate(self, params):
-		if self.f is None:
-			return params[self.key]
-		else:
-			return self.f(params[self.key])
-
-	__call__ = evaluate
-
-	@classmethod
-	def evaluate_list(cls, l, params):
-		r = list()
-		for e in l:
-			if isinstance(l, cls):
-				r.append(
-					e.evaluate(params)
-				)
-			else:
-				r.append(e)
-		return r

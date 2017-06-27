@@ -50,6 +50,13 @@ bjec.master
    :members:
    :undoc-members:
 
+bjec.params
+-----------
+
+.. automodule:: bjec.params
+   :members:
+   :undoc-members:
+
 bjec.processor
 --------------
 
