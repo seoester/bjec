@@ -2,7 +2,8 @@ import subprocess
 import shlex
 import tempfile
 
-from .params import P
+from .params import evaluate
+
 
 class Runner(object):
 	"""docstring for Runner"""
@@ -135,13 +136,13 @@ class ProcessArgs(InputMethod):
 	"""docstring for ProcessArgs
 
 	Args:
-		*args (str, P): Arguments to execute the subprocess with. Supports
-			P wrappers.
+		*args (str, ParamsEvaluable): Arguments to execute the subprocess with.
+			Supports ParamsEvaluable arguments.
 	"""
 
 	class Wrapper(InputMethod.Wrapper):
 		def __enter__(self):
-			l = map(str, P.evaluate_list(self.obj.args, self.params))
+			l = map(str, evaluate(self.obj.args, self.params))
 			if isinstance(self.args, str):
 				self.args += " " + " ".join(map(shlex.quote, l))
 			else:
