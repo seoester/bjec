@@ -5,6 +5,13 @@ import tempfile
 from .params import evaluate
 
 
+try:
+	subprocess.run
+except AttributeError:
+	from run import run
+	subprocess.run = run
+
+
 class Runner(object):
 	"""docstring for Runner"""
 	def start(self):

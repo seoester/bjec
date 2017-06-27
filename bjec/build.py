@@ -13,6 +13,13 @@ from .config import config
 from .utils import listify, min_datetime, max_datetime
 
 
+try:
+	subprocess.run
+except AttributeError:
+	from run import run
+	subprocess.run = run
+
+
 def build(depends=None, master=None):
 	def decorator(f):
 		b = Build(f, depends=depends)
