@@ -8,7 +8,7 @@ from .params import evaluate
 try:
 	subprocess.run
 except AttributeError:
-	from run import run
+	from .subprocess_run import run
 	subprocess.run = run
 
 

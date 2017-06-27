@@ -16,7 +16,7 @@ from .utils import listify, min_datetime, max_datetime
 try:
 	subprocess.run
 except AttributeError:
-	from run import run
+	from .subprocess_run import run
 	subprocess.run = run
 
 
