@@ -19,16 +19,22 @@ class Generator(object):
 		raise NotImplementedError
 
 
-class Product(Generator):
-	"""docstring for Product"""
-	def __init__(self, **kwargs):
-		super(Product, self).__init__()
-		self.params = kwargs
+class List(Generator):
+	def __init__(self, iterable):
+		super(List, self).__init__()
+		self.iterable = iterable
 
 	def __iter__(self):
-		return iter(self._iterator())
+		return iter(self.iterable)
 
-	def _iterator(self):
+
+class Product(Generator):
+	"""docstring for Product"""
+	def __init__(self, **params):
+		super(Product, self).__init__()
+		self.params = params
+
+	def __iter__(self):
 		for c in itertools.product(*self.params.values()):
 			yield dict(zip(self.params.keys(), c))
 
@@ -40,7 +46,7 @@ class Repeat(Generator):
 		self.n = n
 
 	def __iter__(self):
-		return iter(itertools.repeat(self.params, self.n))
+		return itertools.repeat(self.params, self.n)
 
 
 class RepeatG(Generator):
@@ -69,4 +75,18 @@ class Chain(Generator):
 		self.generators = generators
 
 	def __iter__(self):
-		return iter(itertools.chain(*self.generators))
+		return itertools.chain(*self.generators)
+
+
+class Combine(Generator):
+	def __init__(self, *generators):
+		super(Combine, self).__init__()
+		self.generators = generators
+
+	def __iter__(self):
+		return (
+			dict(itertools.chain.from_iterable(
+				params.items() for params in paramsSets
+			))
+			for paramsSets in itertools.product(*self.generators)
+		)
