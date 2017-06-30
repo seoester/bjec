@@ -119,3 +119,11 @@ class Factory(ParamsEvaluable):
 			key: evaluate(value, params) for key, value in self.kwargs.items()
 		}
 		return self.cls(*args, **kwargs)
+
+
+class Function(ParamsEvaluable):
+	def __init__(self, func):
+		self.func = func
+
+	def evaluate(self, params):
+		return self.func(params)
