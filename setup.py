@@ -6,7 +6,7 @@ with open('README.rst') as file:
 
 setup(
 	name="bjec",
-	version="0.2.6",
+	version="0.2.7",
 	description="Batch Job Executor & Collector",
 	long_description=long_description,
 	packages=find_packages(),
