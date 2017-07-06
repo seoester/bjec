@@ -87,7 +87,7 @@ class Concatenate(Collector):
 		else:
 			self.aggregate_file = tempfile_class()
 
-		if self.before_all is not None:
+		if before_all is not None:
 			self.aggregate_file.write(
 				self.before_all
 			)
