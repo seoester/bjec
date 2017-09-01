@@ -69,14 +69,14 @@ class P(ParamsEvaluable):
 
 
 class Join(ParamsEvaluable):
-	"""String / Bytes Join for lists containing P objects.
+	"""String / Bytes Join for lists containing ParamsEvaluable objects.
 
 	The type of output is determined by the type of the `sep` argument.
 
 	If the output should be a ``str``, ``str(.)`` will be called on each list
 	element (in `*args`). If the output should be of type ``bytes``, the user
 	has to ensure that each of the list elements are of ``bytes`` type and that
-	``P(.)`` returns a ``bytes`` object.
+	``ParamsEvaluable(.)`` returns a ``bytes`` object.
 
 	Example:
 		::
@@ -84,9 +84,10 @@ class Join(ParamsEvaluable):
 			Join("out.", P("n"), ".csv")
 
 	Args:
-		*args (object supporting str(.), P or bytes): Elements to join, may
-			be instances of P. If the output type is ``str``, ``str()`` is
-			applied to every element before joining.
+		*args (object supporting str(.), ParamsEvaluable or bytes): Elements to
+			join, may be instances of ParamsEvaluable classes. If the output
+			type is ``str``, ``str()`` is applied to every element before
+			joining.
 		sep (str or bytes, optional): Separator used to join elements of
 			`*args`. Must have the type of the output, i.e. if the output should
 			be of a ``bytes`` type, `sep` must be as well. Defaults to ``""``.
@@ -97,9 +98,9 @@ class Join(ParamsEvaluable):
 
 	def evaluate(self, params):
 		if isinstance(self.sep, str):
-			return self.sep.join(map(str, P.evaluate_list(self.args, params)))
+			return self.sep.join(map(str, evaluate(self.args, params)))
 		else:
-			return self.sep.join(P.evaluate_list(self.args, params))
+			return self.sep.join(evaluate(self.args, params))
 
 
 class Factory(ParamsEvaluable):
