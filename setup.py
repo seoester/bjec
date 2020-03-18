@@ -19,6 +19,7 @@ setup(
         'argh',
         'pyyaml',
         'gitpython',
+        'typing-extensions'
     ],
     entry_points = {
         'console_scripts': ['bjec=bjec.cli:main'],
