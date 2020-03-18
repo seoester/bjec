@@ -5,9 +5,9 @@ with open('README.md') as file:
     long_description = file.read()
 
 setup(
-    name="bjec",
-    version="0.2.8",
-    description="Batch Job Executor & Collector",
+    name='bjec',
+    version='0.3.dev1',
+    description='Batch Job Executor & Collector',
     long_description=long_description,
     long_description_content_type = 'text/markdown',
     package_data = {'simulator': ['py.typed']},
