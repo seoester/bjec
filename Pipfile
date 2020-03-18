@@ -10,6 +10,7 @@ sphinx-rtd-theme = "*"
 sphinxcontrib-napoleon = "*"
 Sphinx = "*"
 twine = "*"
+mypy = "*"
 
 [packages]
 argh = "*"
