@@ -1,4 +1,4 @@
-import collections
+from typing import Iterable
 
 
 class ParamsEvaluable(object):

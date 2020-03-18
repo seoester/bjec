@@ -14,12 +14,13 @@ setup(
     packages = find_packages('src'),
     package_dir = {'': 'src'},
     zip_safe = False,
-    install_requires=[
+    python_requires = '>=3.6',
+    install_requires = [
         'argh',
         'pyyaml',
         'gitpython',
     ],
-    entry_points={
+    entry_points = {
         'console_scripts': ['bjec=bjec.cli:main'],
     },
 )
