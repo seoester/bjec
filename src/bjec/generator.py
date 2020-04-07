@@ -1,92 +1,93 @@
+from abc import ABC, abstractmethod
 import itertools
+from typing import Any, Dict, Iterable, Iterator, Tuple
+
+from .params import ParamSet
 
 
-class Generator(object):
-    """Generator represents a generator for input parameters of tasks.
+class Generator(ABC):
+    """Produces parameter sets.
 
-    Every parameter set produced by the generator represents the input for a
-    a task.
+    A top-level generator produces fully specified parameter sets. Each such
+    parameter set results in an independent invocation or execution when
+    processed by a :obj:`Processor`.
 
-    The ``Generator`` interface basically is a standard python iterable, i.e.
-    the ``__iter__`` method has to be defined and return an iterator.
+    So-called higher-level generators take other generators on input and
+    combine the produced parameter sets in specific ways.
+
+    The ``Generator`` ABC is basically a standard python iterable, i.e. the
+    ``__iter__`` method has to be defined and return an iterator.
     """
 
-    def __iter__(self):
+    @abstractmethod
+    def __iter__(self) -> Iterator[ParamSet]:
         """Returns an iterator over the produced parameter sets.
 
         **Must** be implemented by inheriting classes.
         """
-        raise NotImplementedError
+        raise NotImplementedError()
 
 
-class List(Generator):
-    def __init__(self, iterable):
-        super(List, self).__init__()
-        self.iterable = iterable
+class Literal(Generator):
+    def __init__(self, **params: Any) -> None:
+        super(Literal, self).__init__()
+        self._param_set: Dict[str, Any] = params
 
-    def __iter__(self):
-        return iter(self.iterable)
+    def __iter__(self) -> Iterator[ParamSet]:
+        return iter([self._param_set])
 
 
-class Product(Generator):
-    """docstring for Product"""
-    def __init__(self, **params):
-        super(Product, self).__init__()
-        self.params = params
+class Matrix(Generator):
+    def __init__(self, **params: Iterable[Any]) -> None:
+        super(Matrix, self).__init__()
+        self._params: Dict[str, Iterable[Any]] = params
 
-    def __iter__(self):
-        for c in itertools.product(*self.params.values()):
-            yield dict(zip(self.params.keys(), c))
+    def __iter__(self) -> Iterator[ParamSet]:
+        return (
+            dict(zip(self._params.keys(), values))
+            for values in itertools.product(*self._params.values())
+        )
 
 
 class Repeat(Generator):
-    def __init__(self, params, n):
+    def __init__(self, generator: Generator, n: int) -> None:
         super(Repeat, self).__init__()
-        self.params = params
-        self.n = n
+        self._generator: Generator = generator
+        self._n: int = n
 
-    def __iter__(self):
-        return itertools.repeat(self.params, self.n)
-
-
-class RepeatG(Generator):
-    def __init__(self, generator, n):
-        super(RepeatG, self).__init__()
-        self.generator = generator
-        self.n = n
-
-    def __iter__(self):
+    def __iter__(self) -> Iterator[ParamSet]:
         """
 
         Roughly equivalent to::
 
-            for params in self.generator:
-                for _ in range(self.n):
+            for params in self._generator:
+                for _ in range(self._n):
                     yield params
 
         """
         return itertools.chain.from_iterable(
-            (itertools.repeat(params, self.n) for params in self.generator)
+            (itertools.repeat(params, self._n) for params in self._generator)
         )
 
 
 class Chain(Generator):
-    def __init__(self, *generators):
-        self.generators = generators
+    def __init__(self, *generators: Generator):
+        super(Chain, self).__init__()
+        self._generators: Tuple[Generator, ...] = generators
 
-    def __iter__(self):
-        return itertools.chain(*self.generators)
+    def __iter__(self) -> Iterator[ParamSet]:
+        return itertools.chain(*self._generators)
 
 
-class Combine(Generator):
-    def __init__(self, *generators):
-        super(Combine, self).__init__()
-        self.generators = generators
+class Product(Generator):
+    def __init__(self, *generators: Generator):
+        super(Product, self).__init__()
+        self._generators: Tuple[Generator, ...] = generators
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[ParamSet]:
         return (
             dict(itertools.chain.from_iterable(
-                params.items() for params in paramsSets
+                params.items() for params in param_sets
             ))
-            for paramsSets in itertools.product(*self.generators)
+            for param_sets in itertools.product(*self._generators)
         )
