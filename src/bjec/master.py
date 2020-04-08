@@ -1,107 +1,153 @@
+from abc import ABC, abstractmethod
+from typing import Any, Callable, Dict, Generic, Iterable, List, Optional, Set, Sequence, TypeVar, TYPE_CHECKING, Union
+
 from .utils import listify
 
 
-class Runnable(object):
-    def run(self):
+_T = TypeVar('_T')
+_T_inner = TypeVar('_T_inner')
+_Listifyable = Union[_T, Sequence[_T]]
+_OptListifyable = Optional[Union[_T, Sequence[_T]]]
+_FunctionObject = Callable[..., None] # None is not correct, this could be any function object
+ResolveKey = Union[str, _FunctionObject]
+
+
+class Runnable(ABC):
+    @abstractmethod
+    def run(self) -> None:
         """
 
         **Must** be implemented by inheriting classes.
         """
         raise NotImplementedError
 
-    def __call__(self):
+    def __call__(self) -> None:
         self.run()
 
 
-class WrapperRun(object):
+if TYPE_CHECKING:
+    class _RunnableMixInBase(Runnable):
+        def run(self) -> None: ...
+
+        def __call__(self) -> None: ...
+
+        def _run(self) -> None: ...
+
+        def w_run(self) -> None: ...
+else:
+    _RunnableMixInBase = object
+
+
+class WrapperRun(_RunnableMixInBase):
     """docstring for WrapperRun"""
-    def w_run(self):
+
+    def w_run(self) -> None:
         self._run()
 
-    def run(self):
+    def run(self) -> None:
         self.w_run()
 
 
-class Constructible(object):
+class Constructible(_RunnableMixInBase):
     """docstring for Constructible"""
+
     class Constructor(object):
-        def __init__(self, obj):
+        def __init__(self, obj: Any) -> None:
             super(Constructible.Constructor, self).__init__()
-            self._obj = obj
+            self._obj: Any = obj
 
-    def __init__(self):
+    def __init__(self) -> None:
         super(Constructible, self).__init__()
-        self.__constructor_func = None
-        self.__constructed = False
+        self.__constructor_func: Optional[Callable[[Any], None]] = None
+        self.__constructed: bool = False
 
-    def constructor_func(self, constructor_func):
+    @property
+    def constructor_func(self) -> Callable[[Any], None]:
+        if self.__constructor_func is None:
+            raise Exception('constructor_func has not been set yet')
+
+        return self.__constructor_func
+
+    @constructor_func.setter
+    def constructor_func(self, constructor_func: Callable[[Any], None]) -> None:
         self.__constructor_func = constructor_func
 
-    def constructed(self):
+    @property
+    def constructed(self) -> bool:
         return self.__constructed
 
-    def construct(self):
+    def construct(self) -> None:
         if self.__constructed:
             return
+
+        if self.__constructor_func is None:
+            raise Exception('constructor_func has not been set yet')
 
         cons = self.Constructor(self)
         self.__constructor_func(cons)
 
         self.__constructed = True
 
-    def w_run(self):
+    def w_run(self) -> None:
         self.construct()
 
         super(Constructible, self).w_run()
 
 
-class Artefactor(object):
+class Artefactor(_RunnableMixInBase):
     """docstring for Artefactor
 
     Todo:
         * Policy on artefact() calls after artefact propagation
     """
+
     class Constructor(object):
-        def artefact(self, **kwargs):
+        _obj: Any
+
+        def add_artefacts(self, **kwargs: Callable[[], Any]) -> None:
             self._obj._artefact_funcs.update(kwargs)
 
-    def __init__(self):
+    def __init__(self) -> None:
         super(Artefactor, self).__init__()
-        self._artefact_funcs = dict()
-        self.artefacts = dict()
+        self._artefact_funcs: Dict[str, Callable[[], Any]] = {}
+        self._artefacts: Dict[str, Any] = {}
 
-    def artefact(self, **kwargs):
+    @property
+    def artefacts(self) -> Dict[str, Any]:
+        return self._artefacts
+
+    def add_artefacts(self, **kwargs: Callable[[], None]) -> None:
         self._artefact_funcs.update(kwargs)
 
-    def _propagate_artefacts(self):
+    def _collect_artefacts(self) -> None:
         for key, val in self._artefact_funcs.items():
             self.artefacts[key] = val()
 
-    def w_run(self):
+    def w_run(self) -> None:
         super(Artefactor, self).w_run()
 
-        self._propagate_artefacts()
+        self._collect_artefacts()
 
 
-class Registerable(object):
-    def __init__(self):
+class Registerable(_RunnableMixInBase):
+    def __init__(self) -> None:
         super(Registerable, self).__init__()
-        self.__masters = list()
+        self.__masters: List[Master] = []
 
-    def registered_with(self, master):
+    def registered_with(self, master: 'Master') -> None:
         self.__masters.append(master)
 
-    def _resolve(self, key):
+    def _resolve(self, key: ResolveKey) -> 'Registerable':
             for m in self.__masters:
                 try:
                     return m[key]
                 except KeyError:
                     pass
 
-            raise KeyError("Could not resolve key '{}'".format(repr(key)))
+            raise KeyError(f'Could not resolve key {key!r}')
 
 
-class Dependency(Registerable):
+class Dependency(Registerable, _RunnableMixInBase):
     """docstring for Dependency
 
     Dependency has two different Constructor variants:
@@ -114,63 +160,64 @@ class Dependency(Registerable):
         * 2 Constructors: a) Dependencies resolved and available
     """
     class SetUpConstructor(object):
-        def depends(self, *args):
+        _obj: 'Dependency'
+
+        def depends(self, *args: ResolveKey) -> None:
             self._obj.depends(*args)
 
     class ResolveConstructor(object):
+        _obj: 'Dependency'
+
         @property
-        def dependencies(self):
+        def dependencies(self) -> 'Dependency._Resolver':
             return self._obj.dependencies
 
-    class __Resolver(object):
-        def __init__(self, parent, resolvable):
-            super(Dependency._Dependency__Resolver, self).__init__()
-            self.__parent = parent
-            self.__resolvable = resolvable
+    class _Resolver(object):
+        def __init__(self, parent: 'Dependency', resolvable: Set[Registerable]) -> None:
+            super(Dependency._Resolver, self).__init__()
+            self.__parent: Dependency = parent
+            self.__resolvable: Set[Registerable] = resolvable
 
-        def __getitem__(self, key):
+        def __getitem__(self, key: ResolveKey) -> Registerable:
             item = self.__parent._resolve(key)
 
             if item in self.__resolvable:
                 return item
             else:
-                raise KeyError("Could not resolve key '{}'".format(repr(key)))
+                raise KeyError(f'Could not resolve key {key!r}')
 
-    def __init__(self):
+    def __init__(self) -> None:
         super(Dependency, self).__init__()
-        self.__fulfilled = False
-        self.__depends = list()
-        self.dependencies = None
+        self.__fulfilled: bool = False
+        self.__depends: List[ResolveKey] = []
+        self.dependencies: Dependency._Resolver = Dependency._Resolver(self, set())
 
-    def depends(self, *args):
-        self.__depends.extend(listify(args))
+    def depends(self, *args: ResolveKey) -> None:
+        self.__depends.extend(args)
 
-    def fulfilled(self):
+    def fulfilled(self) -> bool:
         return self.__fulfilled
 
-    def _mark_fulfilled(self):
+    def _mark_fulfilled(self) -> None:
         self.__fulfilled = True
 
-    def _fulfill_dependencies(self):
-        resolvable = []
+    def _fulfill_dependencies(self) -> None:
+        resolvable: Set[Registerable] = set()
 
         for decl in self.__depends:
             try:
                 dependency = self._resolve(decl)
             except KeyError:
-                raise KeyError(
-                    "Could not resolve dependency declaration '{}'"
-                        .format(repr(decl))
-                )
+                raise KeyError(f'Could not resolve dependency declaration {decl!r}')
 
-            resolvable.append(dependency)
+            resolvable.add(dependency)
 
-            if not dependency.fulfilled():
+            if isinstance(dependency, Dependency) and not dependency.fulfilled():
                 dependency.fulfill()
 
-        self.dependencies = self.__Resolver(self, resolvable)
+        self.dependencies = self._Resolver(self, resolvable)
 
-    def fulfill(self):
+    def fulfill(self) -> None:
         """Fulfills this dependency.
 
         **May** be implemented by inheriting classes, but defaults to calling
@@ -186,7 +233,7 @@ class Dependency(Registerable):
         """
         self.run()
 
-    def w_run(self):
+    def w_run(self) -> None:
         if self.fulfilled():
             return
 
@@ -198,28 +245,28 @@ class Dependency(Registerable):
 
 
 class Master(object):
-    def __init__(self):
-        self._registry = dict()
-        self._name_registry = dict()
-        self._func_name_registry = dict()
-        self._secondaries = dict()
+    def __init__(self) -> None:
+        self._registry: Dict[_FunctionObject, Registerable] = {}
+        self._name_registry: Dict[str, Registerable] = {}
+        self._func_name_registry: Dict[str, Registerable] = {}
+        self._aliases: Dict[str, Registerable] = {}
 
-    def register(self, obj, func, secondary=None):
-        secondary = listify(secondary, none_empty=True)
+    def register(self, obj: Registerable, func: _FunctionObject, aliases: _OptListifyable[str]=None) -> None:
+        aliases = listify(aliases, none_empty=True)
 
         self._registry[func] = obj
         self._name_registry[func.__module__ + "." + func.__name__] = obj
         self._func_name_registry[func.__name__] = obj
 
-        for s in secondary:
-            self._secondaries[s] = obj
+        for s in aliases:
+            self._aliases[s] = obj
 
         try:
             obj.registered_with(self)
         except AttributeError:
             pass
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: ResolveKey) -> Registerable:
         if isinstance(key, str):
             try:
                 return self._name_registry[key]
@@ -230,13 +277,10 @@ class Master(object):
                 return self._func_name_registry[key]
             except KeyError:
                 pass
-        else:
-            try:
-                return self._registry[key]
-            except KeyError:
-                pass
 
-        return self._secondaries[key]
+            return self._aliases[key]
+        else:
+            return self._registry[key]
 
 
 master = Master()
