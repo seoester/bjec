@@ -1,60 +1,77 @@
+from typing import Any, Dict, Iterable, Optional, Tuple, Type, Union
 import yaml
 
-
-class Config(object):
-    """docstring for Config"""
-    def __init__(self, namespace="bjec"):
-        super(Config, self).__init__()
-        self.namespace = namespace
-        self.config_dict = dict()
-        self.User = ModuleConfig(self, ["User"])
-
-    def __getitem__(self, key):
-        if not isinstance(key, str):
-            if isinstance(key, type):
-                key = key.__module__ + "." + key.__name__
-            else:
-                key = key.__module__ + "." + key.__class__.__name__
-
-        key_parts = key.split(".")
-
-        if key_parts[0] == self.namespace:
-            key_parts = key_parts[1:]
-
-        return ModuleConfig(self, key_parts)
-
-    def read_yaml(self, path):
-        with open(path) as f:
-            config = yaml.load(f)
-
-        self.config_dict.update(config)
+from .io import PathType
 
 
 class ModuleConfig(object):
-    """docstring for ModuleConfig"""
-    def __init__(self, config, key_parts):
+    def __init__(self, config: 'Config', key_parts: Iterable[str]) -> None:
         super(ModuleConfig, self).__init__()
-        self.config = config
-        self.key_parts = key_parts
+        self._config: Config = config
+        self._key_parts: Tuple[str, ...] = tuple(key_parts)
 
-    def __getitem__(self, key):
-        config_elm = self.config.config_dict
+    @property
+    def key_parts(self) -> Tuple[str, ...]:
+        return self._key_parts
+
+    def __getitem__(self, key: str) -> Union['ModuleConfig', Any]:
+        config_elm: Union[Dict[str, Any], Any] = self._config._config_dict
+
+        key_parts = self._key_parts + (key,)
 
         try:
-            for key_part in self.key_parts + [key]:
+            for key_part in key_parts:
                 config_elm = config_elm[key_part]
         except KeyError:
-            raise KeyError(
-                "'{}' in '{}'".format(key, ".".join(self.key_parts))
-            )
+            key_str = '.'.join(key_parts)
+            raise KeyError(f'{key!r} in {key_str} not in config')
+        except TypeError as e:
+            key_str = '.'.join(key_parts)
+            raise KeyError(f'{key!r} in {key_str} does not resolve to a dict')
 
         return config_elm
 
-    def get(self, key, default=None):
+    def get(self, key: str, default: Optional[Union[Any]]=None) -> Optional[Union['ModuleConfig', Any]]:
         try:
             return self[key]
         except KeyError:
             return default
+
+
+class Config(object):
+    def __init__(self, namespace: str='bjec') -> None:
+        super(Config, self).__init__()
+        self._namespace: str = namespace
+        self._config_dict: Dict[str, Any] = {}
+        self._user_module: ModuleConfig = ModuleConfig(self, ['User'])
+
+    @property
+    def namespace(self) -> str:
+        return self._namespace
+
+    @property
+    def User(self) -> ModuleConfig:
+        return self._user_module
+
+    def __getitem__(self, key: Union[str, object, Type[object]]) -> Any:
+        if not isinstance(key, str):
+            if isinstance(key, type):
+                key = key.__module__ + '.' + key.__name__
+            else:
+                key = key.__module__ + '.' + key.__class__.__name__
+
+        key_parts = key.split('.')
+
+        if key_parts[0] == self._namespace:
+            key_parts = key_parts[1:]
+
+        return ModuleConfig(self, key_parts)
+
+    def read_yaml(self, path: PathType) -> None:
+        with open(path) as f:
+            config = yaml.load(f)
+
+        self._config_dict.update(config)
 
 
 config = Config()
