@@ -1,17 +1,19 @@
-from typing import Any, cast, Callable, Dict, Generic, Iterable, List as TList, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Any, cast, Callable, Dict as TDict, Generic, Iterable, Iterator, List as TList, Mapping, Optional, Sequence, Tuple, Type, TypeVar, Union
 from typing_extensions import Protocol, runtime_checkable
 
 """
 
 Todo:
-    * Switch ParamSet to Mapping[str, Any]
-    * Default value if a parameter is not available via mix-in (with_default).
-        Achieve this by subclassing KeyError: UnavailableParam and check for
-        this exception from mix-in.
     * Complex Dict type and resolve_mapping
-    * Join interface.
-        When is str called on arguments
+    * Join generalisation?
+        When is str called on arguments?
     * Complex String type
+        Should subsume Join and String.
+        Supports concatenation through the ``+`` operator.
+        How to integrate with P(), which can evaluate to anything?
+        P() could check when __radd__ is called what type the other element
+        has and act accordingly... Similarly for the ``/`` operator.
+        Join to enable iterator joining like ``''.join()``?
     * Complex Path type.
         Interoperable with path lib.
         Supports concatenation through the ``/`` operator.
@@ -21,10 +23,11 @@ Todo:
 _T = TypeVar('_T')
 _T_inner = TypeVar('_T_inner')
 _S = TypeVar('_S')
+_S_inner = TypeVar('_S_inner')
 _T_co = TypeVar('_T_co', covariant=True)
 _T_sb = TypeVar('_T_sb', str, bytes)
 
-ParamSet = Dict[str, Any]
+ParamSet = Mapping[str, Any]
 
 
 @runtime_checkable
@@ -56,7 +59,7 @@ def resolve_list(it: IterableResolvable[_T], params: ParamSet) -> TList[_T]:
 class _IdentityMixIn(object):
     def _set_initialisers(self, *args: Any, **kwargs: Any) -> None:
         self.__args: Tuple[Any, ...] = args
-        self.__kwargs: Dict[str, Any] = kwargs
+        self.__kwargs: TDict[str, Any] = kwargs
 
     def __repr__(self) -> str:
         args_str = ', '.join(repr(arg) for arg in self.__args)
@@ -80,39 +83,100 @@ class _IdentityMixIn(object):
         return hash(self.__to_tuple())
 
 
-class _WithTransformMixIn(Generic[_T]):
+class ParamUnavailable(KeyError):
+    pass
+
+    @classmethod
+    def wrap_params(cls, params: ParamSet) -> '_CustomKeyErrorMapping':
+        """Returns wrapped ``params`` raising ParamUnavailable on key miss.
+        """
+        return _CustomKeyErrorMapping(params, exc_type=cls)
+
+
+class _CustomKeyErrorMapping(Mapping[str, Any]):
+    def __init__(self, params: ParamSet, exc_type: Type[KeyError]=ParamUnavailable) -> None:
+        self._params: ParamSet = params
+        self._exc_type: Type[KeyError] = exc_type
+
+    def __getitem__(self, key: str) -> Any:
+        try:
+            return self._params[key]
+        except KeyError as e:
+            raise self._exc_type(*e.args)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._params)
+
+    def __len__(self) -> int:
+        return len(self._params)
+
+    def __contains__(self, obj: object) -> bool:
+        return obj in self._params
+
+
+class _WithMixIn(Generic[_T]):
 
     # TODO: really don't want to put this method on the object as it adds the
     # method to any inheriting class. Instead the inheriting class must make
-    # sure that evaluate_with_params(...) is implemented by one type in the
+    # sure that evaluate_with_params(...) is implemented by a type in the
     # inheritance chain.
-    # It is required though to inform the type checker that self is
-    # ParamsEvaluable.
+    # The definition is required here though to inform the type checker that
+    # self is ParamsEvaluable.
 
-    # This definition does not suffice.
+    # These definitions do not suffice.
+    # Fails ParamsEvaluable interface for _WithMixIn[_T]
     # evaluate_with_params: Callable[[ParamSet], _T]
+    # P and other inheriters are fail due to
+    # "Signature of evaluate_with_params incompatible with supertype ..."
+    # evaluate_with_params: Callable[['_WithMixIn[_T]', ParamSet], _T] # Does not suffice
 
     def evaluate_with_params(self, params: ParamSet) -> _T:
         try:
-            return cast('ParamsEvaluable[_T]', super(_WithTransformMixIn, self)).evaluate_with_params(params)
+            return cast('ParamsEvaluable[_T]', super(_WithMixIn, self)).evaluate_with_params(params)
         except AttributeError:
             raise NotImplementedError(
                 f'evaluate_with_params(...) is not properly implemented within the inheritance chain of {self!r}'
             )
 
-    class _WithTransform(Generic[_T_inner, _S]):
-        def __init__(self, evaluable: ParamsEvaluable[_T_inner], transform_func: Callable[[_T_inner], _S]) -> None:
+    class _Transform(Generic[_T_inner, _S_inner]):
+        def __init__(self, evaluable: ParamsEvaluable[_T_inner], transform_func: Callable[[_T_inner], _S_inner]) -> None:
             self._evaluable: ParamsEvaluable[_T_inner] = evaluable
-            self._transform_func: Callable[[_T_inner], _S] = transform_func
+            self._transform_func: Callable[[_T_inner], _S_inner] = transform_func
 
-        def evaluate_with_params(self, params: ParamSet) -> _S:
+        def evaluate_with_params(self, params: ParamSet) -> _S_inner:
             return self._transform_func(self._evaluable.evaluate_with_params(params))
 
-    def with_transform(self, transform_func: Callable[[_T], _S]) -> '_WithTransformMixIn._WithTransform[_T, _S]':
-        return _WithTransformMixIn._WithTransform(self, transform_func)
+        def transform(self, transform_func: Callable[[_S_inner], _S]) -> '_WithMixIn._Transform[_S_inner, _S]':
+            return _WithMixIn._Transform(self, transform_func)
+
+        def default(self, default: _S) -> '_WithMixIn._Default[_S_inner, _S]':
+            return _WithMixIn._Default(self, default)
+
+    class _Default(Generic[_T_inner, _S_inner]):
+        def __init__(self, evaluable: ParamsEvaluable[_T_inner], default: _S_inner) -> None:
+            self._evaluable: ParamsEvaluable[_T_inner] = evaluable
+            self._default: _S_inner = default
+
+        def evaluate_with_params(self, params: ParamSet) -> Union[_T_inner, _S_inner]:
+            try:
+                return self._evaluable.evaluate_with_params(ParamUnavailable.wrap_params(params))
+            except ParamUnavailable:
+                return self._default
+
+        def transform(self, transform_func: Callable[[Union[_T_inner, _S_inner]], _S]) -> '_WithMixIn._Transform[Union[_T_inner, _S_inner], _S]':
+            return _WithMixIn._Transform(self, transform_func)
+
+        def default(self, default: _S) -> '_WithMixIn._Default[Union[_T_inner, _S_inner], _S]':
+            return _WithMixIn._Default(self, default)
+
+    def transform(self, transform_func: Callable[[_T], _S]) -> '_WithMixIn._Transform[_T, _S]':
+        return _WithMixIn._Transform(self, transform_func)
+
+    def default(self, default: _S) -> '_WithMixIn._Default[_T, _S]':
+        return _WithMixIn._Default(self, default)
 
 
-class P(_IdentityMixIn, _WithTransformMixIn[_T], Generic[_T]):
+class P(_IdentityMixIn, _WithMixIn[_T], Generic[_T]):
     """Wrapper to allow intuitive parameter inclusion.
 
     P instances represent a 'future' parameter value, every instance contains
@@ -139,7 +203,7 @@ class P(_IdentityMixIn, _WithTransformMixIn[_T], Generic[_T]):
         return cast('_T', params[self._key])
 
 
-class Join(_IdentityMixIn, _WithTransformMixIn[_T_sb], Generic[_T_sb]):
+class Join(_IdentityMixIn, _WithMixIn[_T_sb], Generic[_T_sb]):
     """String / Bytes Join for lists containing ParamsEvaluable objects.
 
     The type of output is determined by the type of the `sep` argument.
@@ -171,7 +235,7 @@ class Join(_IdentityMixIn, _WithTransformMixIn[_T_sb], Generic[_T_sb]):
         return self._sep.join(resolve_iterable(self._args, params))
 
 
-class Call(_IdentityMixIn, _WithTransformMixIn[_T], Generic[_T]):
+class Call(_IdentityMixIn, _WithMixIn[_T], Generic[_T]):
     """Calls a function with ParamsEvaluable arguments.
 
     ``Call`` can also be used to instantiate objects, as this happens in the
@@ -189,10 +253,10 @@ class Call(_IdentityMixIn, _WithTransformMixIn[_T], Generic[_T]):
         **kwargs: Keyword arguments passed to the class constructor. May contain
             ``ParamsEvaluable`` values.
     """
-    def __init__(self, func: Callable[..., _T], *args: Any, **kwargs: Any) -> None:
+    def __init__(self, func: Callable[..., _T], *args: Resolvable[Any], **kwargs: Resolvable[Any]) -> None:
         self._func: Callable[..., _T] = func
-        self._args: Tuple[Any, ...] = args
-        self._kwargs: Dict[str, Any] = kwargs
+        self._args: Tuple[Resolvable[Any], ...] = args
+        self._kwargs: TDict[str, Resolvable[Any]] = kwargs
         self._set_initialisers(func, *args, **kwargs)
 
     def evaluate_with_params(self, params: ParamSet) -> _T:
@@ -203,7 +267,7 @@ class Call(_IdentityMixIn, _WithTransformMixIn[_T], Generic[_T]):
         return self._func(*args, **kwargs)
 
 
-class Lambda(_IdentityMixIn, _WithTransformMixIn[_T], Generic[_T]):
+class Lambda(_IdentityMixIn, _WithMixIn[_T], Generic[_T]):
     """Calls a function with the params dict as the only argument.
 
     Convenient way to compute values based on parameters using a lambda
@@ -226,7 +290,7 @@ class Lambda(_IdentityMixIn, _WithTransformMixIn[_T], Generic[_T]):
         return self._func(params)
 
 
-class String(_IdentityMixIn, _WithTransformMixIn[str], object):
+class String(_IdentityMixIn, _WithMixIn[str]):
     """Expands a format string with the params dict on evaluation.
 
     Example:
@@ -247,7 +311,7 @@ class String(_IdentityMixIn, _WithTransformMixIn[str], object):
         return self._format_str.format(**params)
 
 
-class List(_WithTransformMixIn[TList[_T]], Generic[_T]):
+class List(_WithMixIn[TList[_T]], Generic[_T]):
     """Utility to construct complex lists depending on parameters.
 
     Example:
