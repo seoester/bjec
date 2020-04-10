@@ -1,350 +1,264 @@
-import threading
-import shutil
-import tempfile
-import csv
-import io
-import itertools
+from abc import ABC, abstractmethod
+from contextlib import ExitStack
+from shutil import copyfileobj
+import os
+from tempfile import mkstemp
+from types import TracebackType
+from typing import Any, BinaryIO, Callable, cast, Dict, Generic, Iterable, List, Optional, Tuple, Type, TypeVar, Union
 
-from .params import evaluate
-from .utils import listify
+from .params import ParamSet, Resolvable, resolve
+from .io import ensure_writeable, PathType, PrimitivePathType, ReadOpenable, resolve_writable, Writeable, WriteOpenableWrapBinaryIO
+from .utils import consume, listify
 
+_T = TypeVar('_T')
+_S = TypeVar('_S')
+_T_contra = TypeVar('_T_contra', contravariant=True)
 
-class Collector(object):
-    """docstring for Collector"""
-
-    def add(self, params, output):
-        """Adds the output of a run to the collector.
-
-        **Must** be implemented by inheriting classes.
-
-        Inheriting classes can specify whether `add()` may be called after
-        `aggregate()` has been called.
-        Inheriting classes must ensure, that `add()` is thread-safe.
-
-        Parameters:
-            params (dict): The parameters o the run.
-            output (any): Output of the run. What kind of object is passed in
-                will depend on the Runner.
-        """
-        raise NotImplementedError
-
-    def aggregate(self):
-        """Aggregates and returns all the outputs collected.
-
-        **Must** be implemented by inheriting classes.
-
-        Inheriting classes can specify whether `aggregate` may be called
-        multiple times.
-        Inheriting classes may add optional parameters.
-
-        Returns:
-            any: Returns the aggregate of all outputs added to the Collector.
-        """
-        raise NotImplementedError
+# TODO: Check covariant-ness
+# Does that even matter? No information about individual results is
+# extractable from Collector instances and Collector instances are not
+# commonly passed as arguments to other functions.
+# In that sense, a Collector is a write-only container. Write-only containers
+# should be contra-variant: A function accepting a Collector for type _T
+# elements will happily work with an collector for any super-type of _T.
+# The elements written by the function are both an instance of _T and of any super-type of _T
 
 
-class Concatenate(Collector):
-    """Collector concatenating output (file-like objects) into a new file.
+class Collector(Generic[_T_contra], ABC):
+    """Collects and processes per-parameter set results.
 
-    Parameters:
-        file_path (str): The file path to opened as the aggregate file. If
-            ``None`` a temporary file will be created according to
-            `tempfile_class`.
-        tempfile_class (class object or function): The class used to create a
-            temporary file as the aggregate file. Only used when `file_path` is
-            set to ``None``. Please note that a function may be passed in, e.g.
-            thus enabling use of `functools.partial` to set `max_size` for
-            `tempfile.SpooledTemporaryFile`.
-        close_files (bool): If set to ``True``, `add()` will attempt to close
-            the output argument (by calling `close()` on it), ignoring any
-            AttributeError (i.e. `close()` not defined).
-        lock_class (class object or function): The class used to create a lock
-            object.
-
+    Collector provides the context manager interface. Each collector is a
+    non-reentrent context manager. Any long-held resources will only be
+    acquired upon entering the context manager, i.e. by opening an aggregation
+    file. These resources will be released when exiting the context manager,
+    i.e. closing all open files.
     """
-    def __init__(
+
+    def __enter__(self) -> 'Collector[_T_contra]':
+        pass
+
+    def __exit__(
         self,
-        file_path=None,
-        tempfile_class=tempfile.TemporaryFile,
-        close_files=True,
-        lock_class=threading.Lock,
-        before_all=None,
-        after_all=None,
-        before=None,
-        after=None,
-    ):
-        super(Concatenate, self).__init__()
-        self.close_files = close_files
-        self.output_lock = lock_class()
-        self._aggregated = False
+        exc_type: Optional[Type[BaseException]] = None,
+        exc_val: Optional[BaseException] = None,
+        exc_tb: Optional[TracebackType] = None,
+    ) -> Optional[bool]:
+        return None
 
-        self.after_all = after_all
-        self.before = before
-        self.after = after
+    @abstractmethod
+    def collect(self, results: Iterable[Tuple[ParamSet, _T_contra]]) -> None:
+        """Collects and processes all elements within ``results``.
 
-        if file_path is not None:
-            self.aggregate_file = open(file_path, 'w+b')
-        else:
-            self.aggregate_file = tempfile_class()
+        This method **must** be called while the context manager is in the
+        open state.
 
-        if before_all is not None:
-            self.aggregate_file.write(
-                self.before_all
-            )
+        Collect may be called never, once or multiple times.
 
-    def add(self, params, output):
-        if self._aggregated:
-            raise Exception("Has already been aggregated")
-
-        with self.output_lock:
-            if self.before is not None:
-                self.aggregate_file.write(
-                    self._convert(self.before, params)
-                )
-
-            shutil.copyfileobj(output, self.aggregate_file)
-
-            if self.after is not None:
-                self.aggregate_file.write(
-                    self._convert(self.after, params)
-                )
-
-        if self.close_files:
-            try:
-                output.close()
-            except AttributeError:
-                pass
-
-    def aggregate(self):
-        """Returns the file object containing the aggregated output.
-
-        Returns:
-            file-like object: The file object containing the aggregated output,
-            the position in the file is reset to ``0`` before returning.
-            The caller has the responsible to `close()` the returned
-            file-like object.
-
+        Args:
+            results: Iterable over tuples of the parameter set with the
+                associated result.
         """
-        self._aggregated = True
 
-        if self.after_all is not None:
-            self.aggregate_file.write(
-                self.after_all
-            )
-
-        # Seek to beginning of the aggregate file
-        self.aggregate_file.seek(0)
-
-        return self.aggregate_file
-
-    def _convert(self, obj, params):
-        return b""
-
-    def __del__(self):
-        if not self._aggregated:
-            try:
-                self.aggregate_file.close()
-            except:
-                pass
+        raise NotImplementedError()
 
 
-class CSV(Collector):
-    """Collector concatenating CSV output (from file-like objects).
+class Noop(Collector[_T_contra], Generic[_T_contra]):
+    def collect(self, results: Iterable[Tuple[ParamSet, _T_contra]]) -> None:
+        consume(results)
 
-    The Collector expects file-like objects, those are read as CSV files.
-    Each row is appended to an output file.
 
-    Parameters:
-        file_path (str): The file path to opened as the aggregate file. If
-            ``None`` a temporary file will be created according to
-            `tempfile_class`.
-        tempfile_class (class object or function): The class used to create a
-            temporary file as the aggregate file. Only used when `file_path` is
-            set to ``None``. Please note that a function may be passed in, e.g.
-            thus enabling use of `functools.partial` to set `max_size` for
-            `tempfile.SpooledTemporaryFile`.
-        close_files (bool): If set to ``True``, `add()` will attempt to close
-            the output argument (by calling `close()` on it), ignoring any
-            AttributeError (i.e. `close()` not defined).
-        lock_class (class object or function): The class used to create a lock
-            object.
-        input_encoding (str, optional): Input encoding (for `output` passed into
-            `add()`). Defaults to ``"utf-8"``.
-        output_encoding (str, optional): Output encoding (for the aggregate
-            file). Defaults to ``"utf-8"``.
-        input_csv_args (dict, optional): kwargs passed to the `csv.reader()`
-            call used to create a reader for CSV input (from `output` passed
-            into `add()`).
-        output_csv_args (dict, optional): kwargs passed to the `csv.writer()`
-            call used to create a writer for CSV output (to the aggregate file).
-        before_all (iterable of iterables, optional): Is inserted at the
-            beginning of the output file. `before_all` is interpreted as rows,
-            each item in one row is written as column content.
-        after_all (iterable of iterables, optional): Is appended to the end of
-            the output file. `after_all` is interpreted as rows, each item in
-            one row is written as column content.
-        before (iterable of iterables, optional): Is inserted before each item's
-            data, which is  handed to the Collector using `add()`. `before` is
-            interpreted as rows, each item in one row is written as column
-            content.
-        after (iterable of iterables, optional): Is appended to each item's
-            data, which is handed to the Collector using `add()`. `after` is
-            interpreted as rows, each item in one row is written as column
-            content.
-        before_row (iterable, optional): Is inserted at the beginning of each
-            row.  Each item of `before_row` is written as column content.
-        after_row (iterable, optional): Is appended to each row. Each item of
-            `after_row` is written as column content.
+class Multi(Collector[_T_contra], Generic[_T_contra]):
+    def __init__(self, *collectors: Collector[_T_contra]) -> None:
+        self._collectors: Tuple[Collector[_T_contra], ...] = collectors
+        self._stack: ExitStack = ExitStack()
 
-    """
-    def __init__(
+    @property
+    def collectors(self) -> Tuple[Collector[_T_contra], ...]:
+        return self._collectors
+
+    def __enter__(self) -> 'Multi[_T_contra]':
+        self._stack.__enter__()
+        for collector in self._collectors:
+            self._stack.enter_context(collector)
+        return self
+
+    def __exit__(
         self,
-        file_path=None,
-        tempfile_class=tempfile.TemporaryFile,
-        close_files=True,
-        lock_class=threading.Lock,
-        input_encoding="utf-8",
-        output_encoding="utf-8",
-        input_csv_args=None,
-        output_csv_args=None,
-        before_all=None,
-        after_all=None,
-        before_row=None,
-        after_row=None,
-        before=None,
-        after=None,
-    ):
-        super(CSV, self).__init__()
-        self.close_files = close_files
-        self.output_lock = lock_class()
-        self.input_encoding = input_encoding
-        self.input_csv_args = input_csv_args or dict()
-        self._aggregated = False
+        exc_type: Optional[Type[BaseException]] = None,
+        exc_val: Optional[BaseException] = None,
+        exc_tb: Optional[TracebackType] = None,
+    ) -> Optional[bool]:
+        return self._stack.__exit__(exc_type, exc_val, exc_tb)
 
-        self.after_all = after_all
-        self.before_row = before_row
-        self.after_row = after_row
-        self.before = before
-        self.after = after
-
-        if file_path is not None:
-            self.aggregate_file = open(
-                file_path,
-                'w+',
-                encoding=output_encoding,
-                newline='',
-            )
-        else:
-            self.aggregate_file = tempfile_class(
-                mode='w+',
-                encoding=output_encoding,
-                newline='',
-            )
-
-        output_csv_args = output_csv_args or dict()
-
-        self._writer = csv.writer(
-            self.aggregate_file,
-            **output_csv_args
-        )
-
-        if before_all is not None:
-            self._writer.writerows(before_all)
-
-    def add(self, params, output):
-        if self._aggregated:
-            raise Exception("Has already been aggregated")
-
-        wrapper = io.TextIOWrapper(
-            output,
-            encoding=self.input_encoding,
-            newline='',
-        )
-        reader = csv.reader(wrapper, **self.input_csv_args)
-
-        with self.output_lock:
-            if self.before is not None:
-                self._writer.writerows(evaluate(self.before, params))
-
-            for row in reader:
-                before = evaluate(
-                    listify(self.before_row, none_empty=True),
-                    params,
-                )
-                after = evaluate(
-                    listify(self.after_row, none_empty=True),
-                    params,
-                )
-
-                self._writer.writerow(
-                    itertools.chain(before, row, after)
-                )
-
-            if self.after is not None:
-                self._writer.writerows(evaluate(self.after, params))
-
-        if self.close_files:
-            try:
-                output.close()
-            except AttributeError:
-                pass
-
-    def aggregate(self):
-        self._aggregated = True
-
-        if self.after_all is not None:
-            self._writer.writerows(self.after_all)
-
-        # Seek to beginning of the aggregate file
-        self.aggregate_file.seek(0)
-
-        return self.aggregate_file
-
-    def __del__(self):
-        if not self._aggregated:
-            try:
-                self.aggregate_file.close()
-            except:
-                pass
+    def collect(self, results: Iterable[Tuple[ParamSet, _T_contra]]) -> None:
+        for params, result in results:
+            for collector in self._collectors:
+                collector.collect(((params, result),))
 
 
-class Demux(object):
-    """Demux de-multiplexes output, distributing it to different Collectors.
+class Demux(Collector[_T_contra], Generic[_T_contra]):
+    """Demux de-multiplexes results, by distributing to different Collectors.
 
     Args:
-        watch (list of str): List of parameters to watch for: For each distinct
-            combination of values in this list, a collector is maintained.
-        factory (function): Called to create a new collector. A dict of
-            parameters is passed as the only argument, containing only those
-            parameters specified in `watch`.
-        lock_class (class object or function): The class used to create a lock
-            object.
+        keys: Keys in the parameter set which to consider during demuxing. For
+            each distinct combination of values of these keys, a collector is
+            maintained.
+        factory: Function to call to create a new collector. A reduced
+            parameter set is passed as the only argument, containing only
+            those parameters specified in ``keys``.
     """
+
     def __init__(
         self,
-        watch,
-        factory,
-        lock_class=threading.Lock,
+        keys: Iterable[str],
+        factory: 'Callable[[ParamSet], Collector[_T_contra]]',
     ):
         super(Demux, self).__init__()
-        self.watch = watch
-        self.factory = factory
-        self._collectors = dict()
-        self._lock = lock_class()
+        self._keys: Tuple[str, ...] = tuple(keys)
+        self._factory: Callable[[ParamSet], Collector[_T_contra]] = factory
 
-    def add(self, params, output):
-        t = tuple(params[key] for key in self.watch)
+        self._stack: ExitStack = ExitStack()
+        self._collectors: Dict[Tuple[Any, ...], Collector[_T_contra]] = {}
 
-        with self._lock:
-            try:
-                collector = self._collectors[t]
-            except KeyError:
-                collector = self.factory(params)
-                self._collectors[t] = collector
+    @property
+    def keys(self) -> Tuple[str, ...]:
+        return self._keys
 
-        collector.add(params, output)
+    def __enter__(self) -> 'Demux[_T_contra]':
+        self._stack.__enter__()
+        return self
 
-    def aggregate(self):
-        return [
-            collector.aggregate() for collector in self._collectors.values()
-        ]
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]] = None,
+        exc_val: Optional[BaseException] = None,
+        exc_tb: Optional[TracebackType] = None,
+    ) -> Optional[bool]:
+        return self._stack.__exit__(exc_type, exc_val, exc_tb)
+
+    def collect(self, results: Iterable[Tuple[ParamSet, _T_contra]]) -> None:
+        for params, result in results:
+            self._route_result(params, result)
+
+    def _route_result(self, params: ParamSet, result: _T) -> None:
+        """
+
+        Note:
+            mypy prohibits parameters of covariant type. This methods gets
+            around that through a cast.
+            This is still safe as the access is read-only.
+        """
+        typed_result = cast(_T_contra, result)
+
+        t = tuple(params[key] for key in self._keys)
+
+        try:
+            collector = self._collectors[t]
+        except KeyError:
+            collector = self._factory({key: params[key] for key in self._keys})
+            self._collectors[t] = collector
+            self._stack.enter_context(collector)
+
+        collector.collect(((params, typed_result),))
+
+
+class Convert(Collector[_T_contra], Generic[_T_contra, _S]):
+    def __init__(self, f: Callable[[_T_contra], _S], collector: Collector[_S]) -> None:
+        self._f: Callable[[_T_contra], _S] = f
+        self._collector: Collector[_S] = collector
+
+    @property
+    def collector(self) -> Collector[_S]:
+        return self._collector
+
+    def __enter__(self) -> 'Convert[_T_contra, _S]':
+        self._collector.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]] = None,
+        exc_val: Optional[BaseException] = None,
+        exc_tb: Optional[TracebackType] = None,
+    ) -> Optional[bool]:
+        return self._collector.__exit__(exc_type, exc_val, exc_tb)
+
+    def collect(self, results: Iterable[Tuple[ParamSet, _T_contra]]) -> None:
+        self._collector.collect(map(lambda r: (r[0], self._f(r[1])), results))
+
+
+class Concatenate(Collector[ReadOpenable]):
+    """Concatenates file-like openables into a new file.
+
+    Args:
+        path: The file path to be opened as the aggregate file. If ``None`` a
+            temporary file is created (which is not deleted).
+    """
+
+    def __init__(
+        self,
+        path: Optional[PathType] = None,
+        before_all: Optional[Union[Writeable, str, bytes]] = None,
+        after_all: Optional[Union[Writeable, str, bytes]] = None,
+        before: Optional[Resolvable[Union[Writeable, str, bytes]]] = None,
+        after: Optional[Resolvable[Union[Writeable, str, bytes]]] = None,
+    ):
+        super(Concatenate, self).__init__()
+
+        self._before_all: Optional[Union[Writeable, str, bytes]] = before_all
+        self._after_all: Optional[Union[Writeable, str, bytes]] = after_all
+        self._before: Optional[Resolvable[Union[Writeable, str, bytes]]] = before
+        self._after: Optional[Resolvable[Union[Writeable, str, bytes]]] = after
+
+        self._aggregate_path: PrimitivePathType
+        if path is not None:
+            self._aggregate_path = os.fspath(path)
+        else:
+            fd, self._aggregate_path = mkstemp()
+            os.close(fd)
+        self._aggregate_file: Optional[BinaryIO] = None
+
+    @property
+    def path(self) -> Union[str, bytes]:
+        return self._aggregate_path
+
+    def __enter__(self) -> 'Concatenate':
+        if self._aggregate_file is not None:
+            raise Exception('Wrong usage. _aggregate_file is set but is expected to not be.')
+
+        self._aggregate_file = open(self._aggregate_path, 'wb')
+
+        if self._before_all is not None:
+            openable = WriteOpenableWrapBinaryIO(self._aggregate_file)
+            ensure_writeable(self._before_all).write_to(openable)
+
+        return self
+
+    def __exit__(self, *args: Any) -> Optional[bool]:
+        if self._aggregate_file is None:
+            raise Exception('Wrong usage. _aggregate_file is not set but is expected to be.')
+
+        if self._after_all is not None:
+            openable = WriteOpenableWrapBinaryIO(self._aggregate_file)
+            ensure_writeable(self._after_all).write_to(openable)
+
+        self._aggregate_file.close()
+        self._aggregate_file = None
+
+        return None
+
+    def collect(self, results: Iterable[Tuple[ParamSet, ReadOpenable]]) -> None:
+        if self._aggregate_file is None:
+            raise Exception('Wrong usage. _aggregate_file is not set but is expected to be.')
+
+        for params, result in results:
+            if self._before is not None:
+                openable = WriteOpenableWrapBinaryIO(self._aggregate_file)
+                resolve_writable(self._before, params).write_to(openable)
+
+            with result.open_bytes() as result_file:
+                copyfileobj(result_file, self._aggregate_file)
+
+            if self._after is not None:
+                openable = WriteOpenableWrapBinaryIO(self._aggregate_file)
+                resolve_writable(self._after, params).write_to(openable)
