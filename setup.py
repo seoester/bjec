@@ -14,9 +14,8 @@ setup(
     packages = find_packages('src'),
     package_dir = {'': 'src'},
     zip_safe = False,
-    python_requires = '>=3.6',
+    python_requires = '>=3.6, <4',
     install_requires = [
-        'argh',
         'pyyaml',
         'gitpython',
         'typing-extensions'
