@@ -1,5 +1,7 @@
+import collections
 import datetime
-from typing import cast, Iterable, List, Sequence, TypeVar, Union
+import itertools
+from typing import Any, cast, Iterable, List, Optional, Sequence, TypeVar, Union
 
 _T = TypeVar('_T')
 
@@ -23,6 +25,17 @@ def listify(obj: Union[_T, Sequence[_T], None], none_empty: bool=False) -> List[
         return list(obj)
     else:
         return [cast(_T, obj)]
+
+def consume(it: Iterable[Any], n: Optional[int]=None) -> None:
+    """Advance the iterable it n-steps ahead. If n is None, consume entirely.
+
+    Copied from:
+    https://docs.python.org/3.7/library/itertools.html#itertools-recipes
+    """
+    if n is None:
+        collections.deque(it, maxlen=0)
+    else:
+        next(itertools.islice(it, n, n), None)
 
 min_datetime = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 """Minimum representable datetime with timezone ("aware") set to UTC."""
