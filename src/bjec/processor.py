@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Iterable, Iterator, Optional, Tuple, TypeVar
+from types import TracebackType
+from typing import Any, Generic, Iterable, Iterator, Optional, Tuple, Type, TypeVar
 
 from .params import ParamSet
 
@@ -18,13 +19,13 @@ class Processor(Generic[_T_co], ABC):
     """
 
     def __enter__(self) -> 'Processor[_T_co]':
-        pass
+        return self
 
     def __exit__(
         self,
-        t: Optional[type] = None,
-        exc: Optional[BaseException] = None,
-        tb: Optional[Any] = None,
+        exc_type: Optional[Type[BaseException]] = None,
+        exc_val: Optional[BaseException] = None,
+        exc_tb: Optional[TracebackType] = None,
     ) -> Optional[bool]:
         return None
 
