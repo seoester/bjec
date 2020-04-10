@@ -13,11 +13,7 @@ twine = "*"
 mypy = "*"
 
 [packages]
-argh = "*"
-PyYAML = "*"
-GitPython = "*"
 bjec = {editable = true,path = "."}
-typing-extensions = "*"
 
 [requires]
 python_version = "3.7"

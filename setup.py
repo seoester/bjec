@@ -16,8 +16,8 @@ setup(
     zip_safe = False,
     python_requires = '>=3.6, <4',
     install_requires = [
-        'pyyaml',
-        'gitpython',
+        'PyYAML',
+        'GitPython',
         'typing-extensions'
     ],
     entry_points = {
