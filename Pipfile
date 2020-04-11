@@ -11,6 +11,7 @@ sphinxcontrib-napoleon = "*"
 Sphinx = "*"
 twine = "*"
 mypy = "*"
+pytest = "*"
 
 [packages]
 bjec = {editable = true,path = "."}
