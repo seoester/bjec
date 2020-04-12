@@ -13,7 +13,7 @@ Welcome to bjec's documentation!
    getting_started
    runnables
    concepts
-   reference
+   reference/index
 
 
 Indices and tables
