@@ -4,9 +4,8 @@ from typing_extensions import Protocol, runtime_checkable
 """
 
 Todo:
-    * Complex Dict type and resolve_mapping
     * Join generalisation?
-        When is str called on arguments?
+        Under what circumstances (if every) is str/bytes called on arguments?
     * Complex String type
         Should subsume Join and String.
         Supports concatenation through the ``+`` operator.
@@ -39,6 +38,8 @@ class ParamsEvaluable(Protocol[_T_co]):
 Resolvable = Union[_T, ParamsEvaluable[_T]]
 ListResolvable = Union[TList[Resolvable[_T]], Resolvable[TList[_T]]]
 IterableResolvable = Union[Iterable[Resolvable[_T]], Resolvable[Iterable[_T]]]
+MappingResolvable = Union[Mapping[Resolvable[_T], Resolvable[_S]], Resolvable[Mapping[_T, _S]]]
+PairsResolvable = Union[Resolvable[Iterable[Tuple[_T, _S]]], Iterable[Resolvable[Tuple[_T, _S]]], Iterable[Tuple[Resolvable[_T], Resolvable[_S]]]]
 
 def resolve(obj: Resolvable[_T], params: ParamSet) -> _T:
     try:
@@ -54,6 +55,30 @@ def resolve_iterable(it: IterableResolvable[_T], params: ParamSet) -> Iterable[_
 
 def resolve_list(it: IterableResolvable[_T], params: ParamSet) -> TList[_T]:
     return list(resolve_iterable(it, params))
+
+def resolve_mapping(m: MappingResolvable[_T, _S], params: ParamSet) -> Mapping[_T, _S]:
+    try:
+        return cast('ParamsEvaluable[Mapping[_T, _S]]', m).evaluate_with_params(params)
+    except (AttributeError, TypeError):
+        return {
+            resolve(key, params): resolve(value, params)
+            for key, value in cast('Mapping[Resolvable[_T], Resolvable[_S]]', m).items()
+        }
+
+def resolve_dict(m: MappingResolvable[_T, _S], params: ParamSet) -> TDict[_T, _S]:
+    return dict(resolve_mapping(m, params))
+
+def _resolve_pairs(pairs: PairsResolvable[_T, _S], params: ParamSet) -> Iterable[Tuple[_T, _S]]:
+    try:
+        return cast('ParamsEvaluable[Iterable[Tuple[_T, _S]]]', pairs).evaluate_with_params(params)
+    except (AttributeError, TypeError):
+        def f(element: Union[Resolvable[Tuple[_T, _S]], Tuple[Resolvable[_T], Resolvable[_S]]]) -> Tuple[_T, _S]:
+            if isinstance(element, tuple):
+                return (resolve(element[0], params), resolve(element[1], params))
+            else:
+                return element.evaluate_with_params(params)
+
+        return map(f, cast('Union[Iterable[Resolvable[Tuple[_T, _S]]], Iterable[Tuple[Resolvable[_T], Resolvable[_S]]]]', pairs))
 
 
 class _IdentityMixIn(object):
@@ -420,3 +445,106 @@ def ensure_multi_iterable(it: IterableResolvable[_T]) -> IterableResolvable[_T]:
         return it
 
     return list(it)
+
+
+class Dict(_WithMixIn[TDict[_T, _S]], Generic[_T, _S]):
+    """Utility to construct complex dictionaries depending on parameters.
+
+    Example:
+        ::
+
+            {'--mu': P('mu')} + Dict.Conditional(lambda p: 'sigma' in p, {'--sigma': P('sigma')}) + {P('extra_key'): P('extra_value')}
+
+    Todo:
+        * Unsetting keys?
+    """
+
+    class _Part(_IdentityMixIn, Generic[_T_inner, _S_inner]):
+        def __add__(self, other: 'Union[Dict[_T_inner, _S_inner], MappingResolvable[_T_inner, _S_inner]]') -> 'Dict[_T_inner, _S_inner]':
+            return cast('Dict[_T_inner, _S_inner]', Dict()) + self + other
+
+        def __radd__(self, other: 'Union[Dict[_T_inner, _S_inner], MappingResolvable[_T_inner, _S_inner]]') -> 'Dict[_T_inner, _S_inner]':
+            return cast('Dict[_T_inner, _S_inner]', Dict()) + other + self
+
+        def evaluate_with_params(self, params: ParamSet) -> Mapping[_T_inner, _S_inner]:
+            raise NotImplementedError()
+
+
+    class Literal(_Part[_T_inner, _S_inner]):
+        def __init__(self, m: MappingResolvable[_T_inner, _S_inner]) -> None:
+            self._m: MappingResolvable[_T_inner, _S_inner] = m
+            self._set_initialisers(m)
+
+        def evaluate_with_params(self, params: ParamSet) -> Mapping[_T_inner, _S_inner]:
+            return resolve_mapping(self._m, params)
+
+
+    class Conditional(_Part[_T_inner, _S_inner]):
+        def __init__(self, condition: Callable[[ParamSet], bool], m: MappingResolvable[_T_inner, _S_inner]) -> None:
+            self._condition: Callable[[ParamSet], bool] = condition
+            self._m: MappingResolvable[_T_inner, _S_inner] = m
+            self._set_initialisers(condition, m)
+
+        def evaluate_with_params(self, params: ParamSet) -> Mapping[_T_inner, _S_inner]:
+            if self._condition(params):
+                return resolve_mapping(self._m, params)
+            else:
+                return {}
+
+
+    class Pairs(_Part[_T_inner, _S_inner]):
+        def __init__(self, it: IterableResolvable[Tuple[_T_inner, _S_inner]]) -> None:
+            self._it: IterableResolvable[Tuple[_T_inner, _S_inner]] = ensure_multi_iterable(it)
+            self._set_initialisers(it)
+
+        def evaluate_with_params(self, params: ParamSet) -> Mapping[_T_inner, _S_inner]:
+            return dict(_resolve_pairs(self._it, params))
+
+
+    def __init__(self) -> None:
+        self._parts: TList[Dict._Part[_T, _S]] = []
+
+    def evaluate_with_params(self, params: ParamSet) -> TDict[_T, _S]:
+        return {
+            key: value
+            for part in self._parts
+            for key, value in part.evaluate_with_params(params).items()
+        }
+
+    def __add__(self, other: 'Union[Dict[_T, _S], MappingResolvable[_T, _S]]') -> 'Dict[_T, _S]':
+        if isinstance(other, Dict):
+            return Dict._with_parts(self._parts + other._parts)
+
+        if isinstance(other, Dict._Part):
+            other_dict: TList[Dict._Part[_T, _S]] = [other]
+            return Dict._with_parts(self._parts + other_dict)
+
+        wrapped: Dict._Part[_T, _S] = Dict.Literal(other)
+        return Dict._with_parts(self._parts + [wrapped])
+
+    def __radd__(self, other: 'Union[Dict[_T, _S], MappingResolvable[_T, _S]]') -> 'Dict[_T, _S]':
+        if isinstance(other, Dict):
+            return Dict._with_parts(other._parts + self._parts)
+
+        if isinstance(other, Dict._Part):
+            other_dict: TList[Dict._Part[_T, _S]] = [other]
+            return Dict._with_parts(other_dict + self._parts)
+
+        wrapped: Dict._Part[_T, _S] = Dict.Literal(other)
+        return Dict._with_parts([wrapped] + self._parts)
+
+    def __repr__(self) -> str:
+        parts_str = ', '.join(repr(part) for part in self._parts)
+        return f'{self.__class__.__name__}({parts_str})'
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Dict):
+            return NotImplemented
+
+        return other._parts == self._parts
+
+    @classmethod
+    def _with_parts(cls, parts: 'Iterable[Dict._Part[_T, _S]]') -> 'Dict[_T, _S]':
+        l: Dict[_T, _S] = Dict()
+        l._parts = list(parts)
+        return l
