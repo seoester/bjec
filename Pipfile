@@ -14,7 +14,7 @@ mypy = "*"
 pytest = "*"
 
 [packages]
-bjec = {editable = true,path = "."}
+bjec = {editable = true,path = ".",extras = ["htcondor"]}
 
 [requires]
 python_version = "3.7"
