@@ -315,25 +315,119 @@ class Lambda(_IdentityMixIn, _WithMixIn[_T], Generic[_T]):
         return self._func(params)
 
 
-class String(_IdentityMixIn, _WithMixIn[str]):
-    """Expands a format string with the params dict on evaluation.
+class String(_WithMixIn[str]):
+    """Utility to construct complex strings depending on parameters.
 
     Example:
         ::
 
-            String('--nprocs={n}')
+            P('lambda') + String.Format('.{mu}.') + String.Conditional(lambda p: 'sigma' in p, P('sigma'))
 
-    Args:
-        format_str: String which is expanded with the params dict values
-            using ``str.format()``.
     """
 
-    def __init__(self, format_str: str) -> None:
-        self._format_str: str = format_str
-        self._set_initialisers(format_str)
+    class _Part(_IdentityMixIn):
+        def __add__(self, other: 'Union[String, Resolvable[str]]') -> 'String':
+            return String() + self + other
+
+        def __radd__(self, other: 'Union[String, Resolvable[str]]') -> 'String':
+            return String() + other + self
+
+        def evaluate_with_params(self, params: ParamSet) -> str:
+            raise NotImplementedError()
+
+
+    class Literal(_Part):
+        def __init__(self, s: Resolvable[str]) -> None:
+            self._s: Resolvable[str] = s
+            self._set_initialisers(s)
+
+        def evaluate_with_params(self, params: ParamSet) -> str:
+            return resolve(self._s, params)
+
+
+    class Conditional(_Part):
+        def __init__(self, condition: Callable[[ParamSet], bool], s: Resolvable[str]) -> None:
+            self._condition: Callable[[ParamSet], bool] = condition
+            self._s: Resolvable[str] = s
+            self._set_initialisers(condition, s)
+
+        def evaluate_with_params(self, params: ParamSet) -> str:
+            if self._condition(params):
+                return resolve(self._s, params)
+            else:
+                return ''
+
+
+    class Format(_Part):
+        """Expands a format string with the params dict on evaluation.
+
+        Example:
+            ::
+
+                String.Format('--nprocs={n}')
+
+        Args:
+            format_str: String which is expanded with the params dict values
+                using ``str.format()``.
+        """
+
+        def __init__(self, format_str: str) -> None:
+            self._format_str: str = format_str
+            self._set_initialisers(format_str)
+
+        def evaluate_with_params(self, params: ParamSet) -> str:
+            return self._format_str.format(**params)
+
+
+    def __init__(self) -> None:
+        self._parts: TList[String._Part] = []
 
     def evaluate_with_params(self, params: ParamSet) -> str:
-        return self._format_str.format(**params)
+        return ''.join(part.evaluate_with_params(params) for part in self._parts)
+
+    def __add__(self, other: 'Union[String, Resolvable[str]]') -> 'String':
+        if isinstance(other, String):
+            return String._with_parts(self._parts + other._parts)
+
+        if isinstance(other, String._Part):
+            other_list: TList[String._Part] = [other]
+            return String._with_parts(self._parts + other_list)
+
+        if isinstance(other, (str, ParamsEvaluable)):
+            wrapped: String._Part = String.Literal(other)
+            return String._with_parts(self._parts + [wrapped])
+
+        return NotImplemented
+
+    def __radd__(self, other: 'Union[String, Resolvable[str]]') -> 'String':
+        if isinstance(other, String):
+            return String._with_parts(other._parts + self._parts)
+
+        if isinstance(other, String._Part):
+            other_list: TList[String._Part] = [other]
+            return String._with_parts(other_list + self._parts)
+
+        if isinstance(other, (str, ParamsEvaluable)):
+            wrapped: String._Part = String.Literal(other)
+            return String._with_parts(self._parts + [wrapped])
+
+        return NotImplemented
+
+    def __repr__(self) -> str:
+        parts_str = ', '.join(repr(part) for part in self._parts)
+        return f'{self.__class__.__name__}({parts_str})'
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, String):
+            return NotImplemented
+
+        return other._parts == self._parts
+
+    @classmethod
+    def _with_parts(cls, parts: 'Iterable[String._Part]') -> 'String':
+        l = String()
+        l._parts = list(parts)
+        return l
 
 
 class List(_WithMixIn[TList[_T]], Generic[_T]):
