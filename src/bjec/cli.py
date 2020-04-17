@@ -21,7 +21,10 @@ def run(args: RunArgs) -> None:
     bjec_file_globals[args.name]()
 
 parser = argparse.ArgumentParser(description='batch job executor and collector.')
-subparsers = parser.add_subparsers(dest='command', required=True)
+if sys.version_info >= (3, 7): # VERSION_RULE: Python 3.6
+	subparsers = parser.add_subparsers(dest='command', required=True)
+else:
+	subparsers = parser.add_subparsers(dest='command')
 
 parser_record = subparsers.add_parser('run', help='executes a runnable from a bjec definition file.')
 parser_record.add_argument('-f', '--file', default='bjec.py', type=str, help='bjec definition file. Defaults to "bjec.py" in the working directory.')
