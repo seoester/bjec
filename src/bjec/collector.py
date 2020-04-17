@@ -35,7 +35,7 @@ class Collector(Generic[_T_contra], ABC):
     """
 
     def __enter__(self) -> 'Collector[_T_contra]':
-        pass
+        return self
 
     def __exit__(
         self,
