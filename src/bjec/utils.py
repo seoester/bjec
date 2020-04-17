@@ -1,7 +1,10 @@
 import collections
 import datetime
+import functools
 import itertools
-from typing import Any, cast, Iterable, List, Optional, Sequence, TypeVar, Union
+from types import TracebackType
+from typing import Any, Callable, cast, Iterable, Iterator, List, Optional, Sequence, Type, TypeVar, Union
+from typing_extensions import Protocol
 
 _T = TypeVar('_T')
 
@@ -42,3 +45,61 @@ min_datetime = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
 max_datetime = datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
 """Maximum representable datetime with timezone ("aware") set to UTC."""
+
+
+class HandlersCollector(Protocol):
+    def callback(
+        self,
+        callback: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Callable[..., Any]: ...
+
+
+class HandlersList(object):
+    def __init__(self) -> None:
+        self._handlers: List[Callable[[], None]] = []
+
+    def callback(
+        self,
+        callback: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Callable[..., Any]:
+        self._handlers.append(functools.partial(callback, *args, **kwargs))
+        return callback
+
+    def __iadd__(self, other: Iterable[Callable[[], None]]) -> 'HandlersList':
+        self._handlers += other
+        return self
+
+    def clear(self) -> None:
+        self._handlers.clear()
+
+    def __iter__(self) -> Iterator[Callable[[], None]]:
+        return iter(self._handlers)
+
+    def __call__(self) -> None:
+        for handler in self._handlers:
+            handler()
+
+
+class CallbackOnException(object):
+    """Context manager calling a function on exit only if an exception occurred.
+    """
+
+    def __init__(self, f: Callable[..., None], *args: Any, **kwargs: Any) -> None:
+        self._callback: Callable[[], None] = functools.partial(f, *args, **kwargs)
+
+    def __enter__(self) -> 'CallbackOnException':
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]] = None,
+        exc_val: Optional[BaseException] = None,
+        exc_tb: Optional[TracebackType] = None,
+    ) -> Optional[bool]:
+        if exc_type is not None:
+            self._callback()
+        return None

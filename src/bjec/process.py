@@ -5,8 +5,8 @@ from shutil import copyfileobj
 from typing import cast, Any, Callable, Dict, Iterable, List, Optional, Tuple, TypeVar, Union
 from typing_extensions import Protocol
 
-from .io import PathType, PrimitivePathType, resolve_path, resolve_writable, Writeable, WriteableFromPath
-from .params import ensure_multi_iterable, IterableResolvable, ParamSet, resolve, resolve_iterable, Resolvable
+from .io import PathType, PrimitivePathType, resolve_abs_path, resolve_writable, Writeable, WriteableFromPath
+from .params import ensure_multi_iterable, IterableResolvable, MappingResolvable, ParamSet, resolve, resolve_iterable, resolve_mapping, Resolvable
 
 """This module provides the Process abstraction for users and implementers.
 
@@ -191,8 +191,10 @@ class Process(object):
             return self + f
 
         def args(self, *args: Resolvable[str]) -> 'Process.Fluid':
-            """Sets the argument lists with which the process is started.
+            """Sets the argument list with which the process is started.
 
+            Paths of input and output files are available during evaluation as
+            ``P('__file_NAME')``.
             """
 
             def f(p: Process) -> None:
@@ -201,8 +203,10 @@ class Process(object):
             return self + f
 
         def args_from_iterable(self, args: IterableResolvable[str]) -> 'Process.Fluid':
-            """Sets the argument lists with which the process is started.
+            """Sets the argument list with which the process is started.
 
+            Paths of input and output files are available during evaluation as
+            ``P('__file_NAME')``.
             """
 
             args_list = ensure_multi_iterable(args)
@@ -212,7 +216,7 @@ class Process(object):
 
             return self + f
 
-        def working_directory(self, dir: Resolvable[str]) -> 'Process.Fluid':
+        def working_directory(self, dir: Optional[Resolvable[str]]) -> 'Process.Fluid':
             """Sets the working directory of the process.
 
             If unset, implementers may execute in any directory.
@@ -223,11 +227,15 @@ class Process(object):
 
             return self + f
 
-        def environment(self, environment: Environment) -> 'Process.Fluid':
+        def environment(self, environment: MappingResolvable[str, str]) -> 'Process.Fluid':
             """Sets the environment variables of the process.
 
-            Check :obj:`Environment` and :obj:`Environment.Fluid` for details
-            on how to construct this.
+            The recommended way of constructing an environment is the
+            :obj:`Environment` type. It can be built through a fluid interface
+            via :obj:`Environment.Fluid`.
+
+            Paths of input and output files are available during evaluation as
+            ``P('__file_NAME')``.
             """
 
             def f(p: Process) -> None:
@@ -585,14 +593,14 @@ class Process(object):
 
         @property
         def environment(self) -> Dict[str, str]:
-            return self._process._environment.evaluate_with_params(self._params)
+            return dict(resolve_mapping(self._process._environment, self._params).items())
 
         @property
         def stdin(self) -> 'Process.Stdin':
             stdin = self._process._stdin
             return Process.Stdin(
                 source = None if stdin.source is None else resolve_writable(stdin.source, self._params),
-                path = None if stdin.path is None else resolve_path(stdin.path, self._params),
+                path = None if stdin.path is None else resolve_abs_path(stdin.path, self._params),
                 must_not_exist = stdin.must_not_exist,
                 mode = stdin.mode,
                 cleanup_after_finish = stdin.cleanup_after_finish,
@@ -603,7 +611,7 @@ class Process(object):
             stdout = self._process._stdout
             return Process.Stdout(
                 capture = stdout.capture,
-                path = None if stdout.path is None else resolve_path(stdout.path, self._params),
+                path = None if stdout.path is None else resolve_abs_path(stdout.path, self._params),
                 must_not_exist = stdout.must_not_exist,
                 mode = stdout.mode,
                 cleanup_after_finish = stdout.cleanup_after_finish,
@@ -614,7 +622,7 @@ class Process(object):
             stderr = self._process._stderr
             return Process.Stdout(
                 capture = stderr.capture,
-                path = None if stderr.path is None else resolve_path(stderr.path, self._params),
+                path = None if stderr.path is None else resolve_abs_path(stderr.path, self._params),
                 must_not_exist = stderr.must_not_exist,
                 mode = stderr.mode,
                 cleanup_after_finish = stderr.cleanup_after_finish,
@@ -626,7 +634,7 @@ class Process(object):
                 return Process.InputFile(
                     name = file.name,
                     source = resolve_writable(file.source, self._params),
-                    path = None if file.path is None else resolve_path(file.path, self._params),
+                    path = None if file.path is None else resolve_abs_path(file.path, self._params),
                     must_not_exist = file.must_not_exist,
                     mode = file.mode,
                     cleanup_after_finish = file.cleanup_after_finish,
@@ -639,7 +647,7 @@ class Process(object):
             def r(file: 'Process._OutputFile') -> 'Process.OutputFile':
                 return Process.OutputFile(
                     name = file.name,
-                    path = None if file.path is None else resolve_path(file.path, self._params),
+                    path = None if file.path is None else resolve_abs_path(file.path, self._params),
                     must_not_exist = file.must_not_exist,
                     create = file.create,
                     mode = file.mode,
@@ -755,7 +763,8 @@ class Process(object):
         self._cmd: Resolvable[str] = ''
         self._args: IterableResolvable[str] = []
         self._working_directory: Optional[Resolvable[str]] = None
-        self._environment: Environment = Environment([])
+        environment: Dict[str, str] = {}
+        self._environment: MappingResolvable[str, str] = environment
         self._output_files: Dict[str, Process._OutputFile] = {}
         self._input_files: Dict[str, Process._InputFile] = {}
         self._stdin: Process._Stdin = Process._Stdin()
@@ -766,7 +775,7 @@ class Process(object):
         )
 
     def validate(self) -> None:
-        """Raises if the ``Process`` instance is not complete or inconsistent.
+        """Raises if this instance is not complete or inconsistent.
         """
 
         if self._cmd == '':
@@ -830,7 +839,7 @@ class Result(object):
         input_files: Optional[Dict[str, FileAccessor]] = None,
         output_files: Optional[Dict[str, FileAccessor]] = None,
     ) -> None:
-        self._exit_code: int = 0
+        self._exit_code: int = exit_code
         self._stdin: Optional[FileAccessor] = stdin
         self._stdout: Optional[FileAccessor] = stdout
         self._stderr: Optional[FileAccessor] = stderr
@@ -918,44 +927,3 @@ class _DeferredResult(object):
 
 
 DeferredResult = _DeferredResult()
-
-
-def test() -> None:
-    from .params import P, String
-    from pathlib import PurePosixPath
-
-    data_dir = PurePosixPath('/storage/paul/workspace/data')
-    prefix = data_dir / 'physics_groups.two_years/638653110162/'
-
-    p = Process.Fluid(). \
-        environment(Environment.Fluid().
-            inherit(whitelist=['HOME', 'PATH']).
-            set(PIPENV_PIPFILE='/storage/paul/workspace/simulator/Pipfile').
-            build()
-        ). \
-        add_input_file(
-            name = 'access_seq',
-            source = WriteableFromPath(prefix / 'accessseq.json'),
-        ). \
-        add_output_file(
-            name = 'cache_info',
-            path = String(str(prefix) + '/cache_info_{processor}_{storage_size}.json'),
-        ). \
-        add_output_file(
-            name = 'stats_file',
-            path = String(str(prefix) + '/stats_{processor}_{storage_size}.csv'),
-        ). \
-        cmd('/storage/paul/local/bin/pipenv'). \
-        args(
-            'run', 'python', '-m', 'simulator.cli',
-            'replay',
-            '-f', P('__file_access_seq'),
-            '--cache-processor-count', P('processor_count').transform(str),
-            '--cache-processor', P('processor'),
-            '--storage-size', P('storage_size').transform(str),
-            '--cache-info-file', P('__file_cache_info'),
-            '--stats-file', P('__file_stats_file'),
-        ). \
-        capture_stdout(path=String(str(prefix) + '/out_{processor}_{storage_size}.txt')). \
-        capture_stderr(path=String(str(prefix) + '/err_{processor}_{storage_size}.txt')). \
-        build()

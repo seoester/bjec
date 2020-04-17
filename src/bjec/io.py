@@ -1,5 +1,6 @@
 from io import BufferedIOBase, BufferedWriter, FileIO, TextIOBase, TextIOWrapper, RawIOBase
 from os import fspath, PathLike
+import os.path
 from shutil import copyfileobj
 from typing import Any, BinaryIO, Callable, cast, Optional, TextIO, TYPE_CHECKING, Union
 from typing_extensions import Protocol
@@ -189,7 +190,7 @@ class WriteableFromPath(Writeable):
 
 
     def __init__(self, path: PathType) -> None:
-        self._path: PathType = path
+        self._path: PathType = os.path.abspath(path)
 
     @property
     def path(self) -> PathType:
@@ -253,9 +254,10 @@ class WriteableFromBytes(Writeable):
 
 
 def resolve_path(path: Resolvable[PathType], params: ParamSet) -> PrimitivePathType:
-    return fspath(
-        cast(PathType, resolve(path, params)),
-    )
+    return fspath(cast(PathType, resolve(path, params)))
+
+def resolve_abs_path(path: Resolvable[PathType], params: ParamSet) -> PrimitivePathType:
+    return os.path.abspath(cast(PathType, resolve(path, params)))
 
 def resolve_writable(
     source: Resolvable[Union[Writeable, str, bytes]],

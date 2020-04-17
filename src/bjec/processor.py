@@ -11,11 +11,6 @@ _T_co = TypeVar('_T_co', covariant=True)
 
 class Processor(Generic[_T_co], ABC):
     """docstring for Processor
-
-    A ``Processor`` is responsible for the task execution pipeline, that is
-    fetching parameter sets from a ``Generator``, handing them to a ``Runner``
-    and passing the ``Runner``'s output to a ``Collector``.
-    Meanwhile the ``Processor`` has to manage its ``Runners'`` lifecycle.
     """
 
     def __enter__(self) -> 'Processor[_T_co]':
