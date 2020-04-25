@@ -52,6 +52,14 @@ bjec.generator module
    :undoc-members:
    :show-inheritance:
 
+bjec.htcondor module
+--------------------
+
+.. automodule:: bjec.htcondor
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 bjec.io module
 --------------
 
