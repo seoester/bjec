@@ -1,4 +1,23 @@
-from typing import Any, cast, Callable, Dict as TDict, Generic, Iterable, Iterator, List as TList, Mapping, Optional, Sequence, Tuple, Type, TypeVar, Union
+from os import PathLike
+from pathlib import PurePath
+from typing import (
+    Any,
+    cast,
+    Callable,
+    Dict as TDict,
+    Generic,
+    Iterable,
+    Iterator,
+    List as TList,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TYPE_CHECKING,
+    TypeVar,
+    Union,
+)
 from typing_extensions import Protocol, runtime_checkable
 
 """
@@ -18,6 +37,11 @@ Todo:
         Supports concatenation through the ``/`` operator.
 
 """
+
+if TYPE_CHECKING:
+    _StrPathLike = PathLike[str]
+else:
+    _StrPathLike = PathLike
 
 _T = TypeVar('_T')
 _T_inner = TypeVar('_T_inner')
@@ -426,6 +450,134 @@ class String(_WithMixIn[str]):
     @classmethod
     def _with_parts(cls, parts: 'Iterable[String._Part]') -> 'String':
         l = String()
+        l._parts = list(parts)
+        return l
+
+
+_PurePathable = Union[_StrPathLike, str]
+
+
+class Path(_WithMixIn[PurePath]):
+    """Utility to construct complex paths depending on parameters with pathlib.
+
+    Example:
+        ::
+
+            Path.Literal(base_dir) / P('scenario') / Path.Conditional(lambda p: 'sub_scenario' in p, P('sub_scenario')) / Path.Format('{case}.csv')
+
+    """
+
+    class _Part(_IdentityMixIn):
+        def __truediv__(self, other: 'Union[Path, Resolvable[_PurePathable]]') -> 'Path':
+            return Path() / self / other
+
+        def __rtruediv__(self, other: 'Union[Path, Resolvable[_PurePathable]]') -> 'Path':
+            return Path() / other / self
+
+        def evaluate_with_params(self, params: ParamSet) -> PurePath:
+            raise NotImplementedError()
+
+
+    class Literal(_Part):
+        def __init__(self, s: Resolvable[Union[_PurePathable]]) -> None:
+            self._s: Resolvable[_PurePathable] = s
+            self._set_initialisers(s)
+
+        def evaluate_with_params(self, params: ParamSet) -> PurePath:
+            resolved = resolve(self._s, params)
+            if isinstance(resolved, PurePath):
+                return resolved
+            else:
+                return PurePath(cast(_PurePathable, resolved))
+
+
+    class Conditional(_Part):
+        def __init__(self, condition: Callable[[ParamSet], bool], s: Resolvable[_PurePathable]) -> None:
+            self._condition: Callable[[ParamSet], bool] = condition
+            self._s: Resolvable[_PurePathable] = s
+            self._set_initialisers(condition, s)
+
+        def evaluate_with_params(self, params: ParamSet) -> PurePath:
+            if self._condition(params):
+                resolved = resolve(self._s, params)
+                if isinstance(resolved, PurePath):
+                    return resolved
+                else:
+                    return PurePath(cast(_PurePathable, resolved))
+            else:
+                return PurePath()
+
+
+    class Format(_Part):
+        """Expands a format string with the params dict on evaluation.
+
+        Example:
+            ::
+
+                Path.Format('{case}.csv')
+
+        Args:
+            format_str: Path which is expanded with the params dict values
+                using ``str.format()``.
+        """
+
+        def __init__(self, format_str: str) -> None:
+            self._format_str: str = format_str
+            self._set_initialisers(format_str)
+
+        def evaluate_with_params(self, params: ParamSet) -> PurePath:
+            return PurePath(self._format_str.format(**params))
+
+
+    def __init__(self) -> None:
+        self._parts: TList[Path._Part] = []
+
+    def evaluate_with_params(self, params: ParamSet) -> PurePath:
+        return PurePath(*(part.evaluate_with_params(params) for part in self._parts))
+
+    def __truediv__(self, other: 'Union[Path, Resolvable[_PurePathable]]') -> 'Path':
+        if isinstance(other, Path):
+            return Path._with_parts(self._parts + other._parts)
+
+        if isinstance(other, Path._Part):
+            other_list: TList[Path._Part] = [other]
+            return Path._with_parts(self._parts + other_list)
+
+        if isinstance(other, (str, ParamsEvaluable)):
+            wrapped: Path._Part = Path.Literal(other)
+            return Path._with_parts(self._parts + [wrapped])
+
+        return NotImplemented # type: ignore[no-any-return]
+        # This issue has since been fixed https://github.com/python/mypy/issues/9296
+
+    def __rtruediv__(self, other: 'Union[Path, Resolvable[_PurePathable]]') -> 'Path':
+        if isinstance(other, Path):
+            return Path._with_parts(other._parts + self._parts)
+
+        if isinstance(other, Path._Part):
+            other_list: TList[Path._Part] = [other]
+            return Path._with_parts(other_list + self._parts)
+
+        if isinstance(other, (str, ParamsEvaluable)):
+            wrapped: Path._Part = Path.Literal(other)
+            return Path._with_parts(self._parts + [wrapped])
+
+        return NotImplemented # type: ignore[no-any-return]
+        # This issue has since been fixed https://github.com/python/mypy/issues/9296
+
+    def __repr__(self) -> str:
+        parts_str = ', '.join(repr(part) for part in self._parts)
+        return f'{self.__class__.__name__}({parts_str})'
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Path):
+            return NotImplemented
+
+        return other._parts == self._parts
+
+    @classmethod
+    def _with_parts(cls, parts: 'Iterable[Path._Part]') -> 'Path':
+        l = Path()
         l._parts = list(parts)
         return l
 
