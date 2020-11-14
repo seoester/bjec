@@ -105,6 +105,22 @@ def _resolve_pairs(pairs: PairsResolvable[_T, _S], params: ParamSet) -> Iterable
         return map(f, cast('Union[Iterable[Resolvable[Tuple[_T, _S]]], Iterable[Tuple[Resolvable[_T], Resolvable[_S]]]]', pairs))
 
 
+@runtime_checkable
+class _Transformable(Protocol[_T_co]):
+    def transform(self, params: Callable[[_T_co], _S]) -> ParamsEvaluable[_S]:
+        ...
+
+
+def transform(r: Resolvable[_T], transform_func: Callable[[_T], _S]) -> Resolvable[_S]:
+    if isinstance(r, ParamsEvaluable):
+        try:
+            return cast('_Transformable[_T]', r).transform(transform_func)
+        except (AttributeError, TypeError):
+            return _WithMixIn._Transform(r, transform_func)
+    else:
+        return transform_func(r)
+
+
 class _IdentityMixIn(object):
     def _set_initialisers(self, *args: Any, **kwargs: Any) -> None:
         self.__args: Tuple[Any, ...] = args
@@ -133,8 +149,6 @@ class _IdentityMixIn(object):
 
 
 class ParamUnavailable(KeyError):
-    pass
-
     @classmethod
     def wrap_params(cls, params: ParamSet) -> '_CustomKeyErrorMapping':
         """Returns wrapped ``params`` raising ParamUnavailable on key miss.
