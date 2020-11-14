@@ -248,6 +248,7 @@ class Process(object):
             source: Optional[Resolvable[Union[Writeable, str, bytes]]] = None,
             path: Optional[Resolvable[PathType]] = None,
             must_not_exist: bool = True,
+            create_parents: bool = False,
             mode: int = 0o666,
             cleanup_after_finish: bool = False,
         ) -> 'Process.Fluid':
@@ -267,6 +268,10 @@ class Process(object):
                     the file is created from ``source``. Only considered if
                     ``path`` is not ``None``, as otherwise the implementer
                     manages the file.
+                create_parents: If ``True`` all parent directories of the file
+                    are created if non-existent. Directories are created with
+                    the default mode, disregarding the ``mode`` parameter.
+                    Only considered if ``path`` is not ``None``.
                 mode: Mode bits of the file, see ``os.open()`` for details.
                     Only considered when ``path`` is not ``None`` and
                     ``source`` is not ``None``.
@@ -280,6 +285,7 @@ class Process(object):
                     source = source,
                     path = path,
                     must_not_exist = must_not_exist,
+                    create_parents = create_parents,
                     mode = mode,
                     cleanup_after_finish = cleanup_after_finish,
                 )
@@ -291,6 +297,7 @@ class Process(object):
             capture: bool = True,
             path: Optional[Resolvable[PathType]] = None,
             must_not_exist: bool = True,
+            create_parents: bool = False,
             mode: int = 0o666,
             cleanup_after_finish: bool = False,
         ) -> 'Process.Fluid':
@@ -308,6 +315,10 @@ class Process(object):
                     This is evaluated before the process is started. Only
                     considered if ``path`` is not ``None``, as otherwise the
                     implementer manages the file.
+                create_parents: If ``True`` all parent directories of the file
+                    are created if non-existent. Directories are created with
+                    the default mode, disregarding the ``mode`` parameter.
+                    Only considered if ``path`` is not ``None``.
                 mode: Mode bits of the file, see ``os.open()`` for details.
                     Only considered when ``path`` is not ``None``.
                 cleanup_after_finish: If ``True`` the stdout file is deleted
@@ -326,6 +337,7 @@ class Process(object):
                     capture = capture,
                     path = path,
                     must_not_exist = must_not_exist,
+                    create_parents = create_parents,
                     mode = mode,
                     cleanup_after_finish = cleanup_after_finish,
                 )
@@ -337,6 +349,7 @@ class Process(object):
             capture: bool = True,
             path: Optional[Resolvable[PathType]] = None,
             must_not_exist: bool = True,
+            create_parents: bool = False,
             mode: int = 0o666,
             cleanup_after_finish: bool = False,
         ) -> 'Process.Fluid':
@@ -354,6 +367,10 @@ class Process(object):
                     This is evaluated before the process is started. Only
                     considered if ``path`` is not ``None``, as otherwise the
                     implementer manages the file.
+                create_parents: If ``True`` all parent directories of the file
+                    are created if non-existent. Directories are created with
+                    the default mode, disregarding the ``mode`` parameter.
+                    Only considered if ``path`` is not ``None``.
                 mode: Mode bits of the file, see ``os.open()`` for details.
                     Only considered when ``path`` is not ``None``.
                 cleanup_after_finish: If ``True`` the stderr file is deleted
@@ -372,6 +389,7 @@ class Process(object):
                     capture = capture,
                     path = path,
                     must_not_exist = must_not_exist,
+                    create_parents = create_parents,
                     mode = mode,
                     cleanup_after_finish = cleanup_after_finish,
                 )
@@ -384,6 +402,7 @@ class Process(object):
             source: Resolvable[Union[Writeable, str, bytes]],
             path: Optional[Resolvable[PathType]] = None,
             must_not_exist: bool = True,
+            create_parents: bool = False,
             mode: int = 0o666,
             cleanup_after_finish: bool = False,
         ) -> 'Process.Fluid':
@@ -411,6 +430,10 @@ class Process(object):
                     the file is created from ``source``. Only considered if
                     ``path`` is not ``None``, as otherwise the implementer
                     manages the file.
+                create_parents: If ``True`` all parent directories of the file
+                    are created if non-existent. Directories are created with
+                    the default mode, disregarding the ``mode`` parameter.
+                    Only considered if ``path`` is not ``None``.
                 mode: Mode bits of the file, see ``os.open()`` for details.
                     Only considered when ``path`` is not ``None`` and
                     ``source`` is not ``None``.
@@ -429,6 +452,7 @@ class Process(object):
                     source = source,
                     path = path,
                     must_not_exist = must_not_exist,
+                    create_parents = create_parents,
                     mode = mode,
                     cleanup_after_finish = cleanup_after_finish,
                 )
@@ -450,6 +474,7 @@ class Process(object):
             path: Optional[Resolvable[PathType]] = None,
             must_not_exist: bool = True,
             create: bool = True,
+            create_parents: bool = False,
             mode: int = 0o666,
             cleanup_after_finish: bool = False,
         ) -> 'Process.Fluid':
@@ -480,6 +505,11 @@ class Process(object):
                     the process is started. If ``False`` the file is ensured
                     to not be present, meaning any file at the path will be
                     deleted.
+                create_parents: If ``True`` all parent directories of the file
+                    are created if non-existent. Directories are created with
+                    the default mode, disregarding the ``mode`` parameter. The
+                    directories are created before the process is started.
+                    Only considered if ``path`` is not ``None``.
                 mode: Mode bits of the file, see ``os.open()`` for details.
                     Only considered when ``path`` is not ``None``. If
                     ``create`` is ``True``, the bits are set before the
@@ -500,6 +530,7 @@ class Process(object):
                    path = path,
                    must_not_exist = must_not_exist,
                    create = create,
+                   create_parents = create_parents,
                    mode = mode,
                    cleanup_after_finish  = cleanup_after_finish,
                 )
@@ -602,6 +633,7 @@ class Process(object):
                 source = None if stdin.source is None else resolve_writable(stdin.source, self._params),
                 path = None if stdin.path is None else resolve_abs_path(stdin.path, self._params),
                 must_not_exist = stdin.must_not_exist,
+                create_parents = stdin.create_parents,
                 mode = stdin.mode,
                 cleanup_after_finish = stdin.cleanup_after_finish,
             )
@@ -613,6 +645,7 @@ class Process(object):
                 capture = stdout.capture,
                 path = None if stdout.path is None else resolve_abs_path(stdout.path, self._params),
                 must_not_exist = stdout.must_not_exist,
+                create_parents = stdout.create_parents,
                 mode = stdout.mode,
                 cleanup_after_finish = stdout.cleanup_after_finish,
             )
@@ -624,6 +657,7 @@ class Process(object):
                 capture = stderr.capture,
                 path = None if stderr.path is None else resolve_abs_path(stderr.path, self._params),
                 must_not_exist = stderr.must_not_exist,
+                create_parents = stderr.create_parents,
                 mode = stderr.mode,
                 cleanup_after_finish = stderr.cleanup_after_finish,
             )
@@ -636,6 +670,7 @@ class Process(object):
                     source = resolve_writable(file.source, self._params),
                     path = None if file.path is None else resolve_abs_path(file.path, self._params),
                     must_not_exist = file.must_not_exist,
+                    create_parents = file.create_parents,
                     mode = file.mode,
                     cleanup_after_finish = file.cleanup_after_finish,
                 )
@@ -650,6 +685,7 @@ class Process(object):
                     path = None if file.path is None else resolve_abs_path(file.path, self._params),
                     must_not_exist = file.must_not_exist,
                     create = file.create,
+                    create_parents = file.create_parents,
                     mode = file.mode,
                     cleanup_after_finish = file.cleanup_after_finish,
                 )
@@ -671,6 +707,7 @@ class Process(object):
         path: Optional[Resolvable[PathType]] = None
         must_not_exist: bool = True
         create: bool = True
+        create_parents: bool = False
         mode: int = 0o666
         cleanup_after_finish: bool = False
 
@@ -681,6 +718,7 @@ class Process(object):
         source: Resolvable[Union[Writeable, str, bytes]]
         path: Optional[Resolvable[PathType]] = None
         must_not_exist: bool = True
+        create_parents: bool = False
         mode: int = 0o666
         cleanup_after_finish: bool = False
 
@@ -690,6 +728,7 @@ class Process(object):
         source: Optional[Resolvable[Union[Writeable, str, bytes]]] = None
         path: Optional[Resolvable[PathType]] = None
         must_not_exist: bool = True
+        create_parents: bool = False
         mode: int = 0o666
         cleanup_after_finish: bool = False
 
@@ -699,6 +738,7 @@ class Process(object):
         capture: bool = False
         path: Optional[Resolvable[PathType]] = None
         must_not_exist: bool = True
+        create_parents: bool = False
         mode: int = 0o666
         cleanup_after_finish: bool = False
 
@@ -716,6 +756,7 @@ class Process(object):
         path: Optional[PrimitivePathType] = None
         must_not_exist: bool = True
         create: bool = True
+        create_parents: bool = False
         mode: int = 0o666
         cleanup_after_finish: bool = False
 
@@ -726,6 +767,7 @@ class Process(object):
         source: Writeable
         path: Optional[PrimitivePathType] = None
         must_not_exist: bool = True
+        create_parents: bool = False
         mode: int = 0o666
         cleanup_after_finish: bool = False
 
@@ -735,6 +777,7 @@ class Process(object):
         source: Optional[Writeable] = None
         path: Optional[PrimitivePathType] = None
         must_not_exist: bool = True
+        create_parents: bool = False
         mode: int = 0o666
         cleanup_after_finish: bool = False
 
@@ -748,6 +791,7 @@ class Process(object):
         capture: bool = False
         path: Optional[PrimitivePathType] = None
         must_not_exist: bool = True
+        create_parents: bool = False
         mode: int = 0o666
         cleanup_after_finish: bool = False
 

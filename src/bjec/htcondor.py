@@ -494,6 +494,7 @@ class Job(object):
             capture: bool = True,
             path: Optional[Resolvable[PathType]] = None,
             must_not_exist: bool = False,
+            create_parents: bool = False,
             mode: int = 0o666,
             cleanup_after_finish: bool = False,
         ) -> 'Job.Fluid':
@@ -511,6 +512,10 @@ class Job(object):
                     This is evaluated before the process is started. Only
                     considered if ``path`` is not ``None``, as otherwise the
                     implementer manages the file.
+                create_parents: If ``True`` all parent directories of the file
+                    are created if non-existent. Directories are created with
+                    the default mode, disregarding the ``mode`` parameter.
+                    Only considered if ``path`` is not ``None``.
                 mode: Mode bits of the file, see ``os.open()`` for details.
                     Only considered when ``path`` is not ``None``.
                 cleanup_after_finish: If ``True`` the stdout file is deleted
@@ -529,6 +534,7 @@ class Job(object):
                     capture = capture,
                     path = path,
                     must_not_exist = must_not_exist,
+                    create_parents = create_parents,
                     mode = mode,
                     cleanup_after_finish = cleanup_after_finish,
                 )
@@ -559,6 +565,7 @@ class Job(object):
         capture: bool = False
         path: Optional[Resolvable[PathType]] = None
         must_not_exist: bool = False
+        create_parents: bool = False
         mode: int = 0o666
         cleanup_after_finish: bool = False
 
@@ -589,6 +596,7 @@ class Job(object):
                 capture = log.capture,
                 path = None if log.path is None else resolve_abs_path(log.path, self._params),
                 must_not_exist = log.must_not_exist,
+                create_parents = log.create_parents,
                 mode = log.mode,
                 cleanup_after_finish = log.cleanup_after_finish,
             )

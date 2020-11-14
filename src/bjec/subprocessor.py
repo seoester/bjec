@@ -59,6 +59,9 @@ def prepare_input_file(
             )
 
     if spec.path is not None:
+        if spec.create_parents:
+            os.makedirs(os.path.dirname(spec.path), exist_ok=True)
+
         try:
             fd = os.open(spec.path, os.O_WRONLY|os.O_CREAT|os.O_EXCL, mode=spec.mode)
             os.close(fd)
@@ -124,6 +127,9 @@ def prepare_output_file(
         name = spec.name
 
     if spec.path is not None:
+        if spec.create_parents:
+            os.makedirs(os.path.dirname(spec.path), exist_ok=True)
+
         try:
             fd = os.open(spec.path, os.O_WRONLY|os.O_CREAT|os.O_EXCL, mode=spec.mode)
             os.close(fd)
