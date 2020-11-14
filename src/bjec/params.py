@@ -111,14 +111,14 @@ class _Transformable(Protocol[_T_co]):
         ...
 
 
-def transform(r: Resolvable[_T], transform_func: Callable[[_T], _S]) -> Resolvable[_S]:
-    if isinstance(r, ParamsEvaluable):
+def transform(obj: Resolvable[_T], transform_func: Callable[[_T], _S]) -> Resolvable[_S]:
+    if isinstance(obj, ParamsEvaluable):
         try:
-            return cast('_Transformable[_T]', r).transform(transform_func)
+            return cast('_Transformable[_T]', obj).transform(transform_func)
         except (AttributeError, TypeError):
-            return _WithMixIn._Transform(r, transform_func)
+            return _WithMixIn._Transform(obj, transform_func)
     else:
-        return transform_func(r)
+        return transform_func(obj)
 
 
 class _IdentityMixIn(object):
@@ -407,14 +407,21 @@ class String(_WithMixIn[str]):
         Args:
             format_str: String which is expanded with the params dict values
                 using ``str.format()``.
+            **resolvables: `Resolvable`s which are resolved and made available
+                as ``{name}`` (the argument's name) during ``str.format()``
+                evaluation.
         """
 
-        def __init__(self, format_str: str) -> None:
+        def __init__(self, format_str: str, **resolvables: Resolvable[str]) -> None:
             self._format_str: str = format_str
-            self._set_initialisers(format_str)
+            self._resolvables: TDict[str, Resolvable[str]] = resolvables
+            self._set_initialisers(format_str, **resolvables)
 
         def evaluate_with_params(self, params: ParamSet) -> str:
-            return self._format_str.format(**params)
+            extended_params = dict(params)
+            for name, obj in self._resolvables:
+                extended_params[name] = resolve(obj, params)
+            return self._format_str.format(**extended_params)
 
 
     def __init__(self) -> None:
@@ -533,14 +540,21 @@ class Path(_WithMixIn[PurePath]):
         Args:
             format_str: Path which is expanded with the params dict values
                 using ``str.format()``.
+            **resolvables: `Resolvable`s which are resolved and made available
+                as ``{name}`` (the argument's name) during ``str.format()``
+                evaluation.
         """
 
-        def __init__(self, format_str: str) -> None:
+        def __init__(self, format_str: str, **resolvables: Resolvable[str]) -> None:
             self._format_str: str = format_str
-            self._set_initialisers(format_str)
+            self._resolvables: TDict[str, Resolvable[str]] = resolvables
+            self._set_initialisers(format_str, **resolvables)
 
         def evaluate_with_params(self, params: ParamSet) -> PurePath:
-            return PurePath(self._format_str.format(**params))
+            extended_params = dict(params)
+            for name, obj in self._resolvables:
+                extended_params[name] = resolve(obj, params)
+            return PurePath(self._format_str.format(**extended_params))
 
 
     def __init__(self) -> None:
