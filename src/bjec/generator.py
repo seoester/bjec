@@ -71,7 +71,7 @@ class Repeat(Generator):
 
 
 class Chain(Generator):
-    def __init__(self, *generators: Generator):
+    def __init__(self, *generators: Generator) -> None:
         super(Chain, self).__init__()
         self._generators: Tuple[Generator, ...] = generators
 
@@ -80,7 +80,7 @@ class Chain(Generator):
 
 
 class Product(Generator):
-    def __init__(self, *generators: Generator):
+    def __init__(self, *generators: Generator) -> None:
         super(Product, self).__init__()
         self._generators: Tuple[Generator, ...] = generators
 
@@ -91,3 +91,12 @@ class Product(Generator):
             ))
             for param_sets in itertools.product(*self._generators)
         )
+
+
+class FromIterable(Generator):
+    def __init__(self, it: Iterable[ParamSet]) -> None:
+        super(FromIterable, self).__init__()
+        self._it: Iterable[ParamSet] = it
+
+    def __iter__(self) -> Iterator[ParamSet]:
+        return iter(self._it)
