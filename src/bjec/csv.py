@@ -10,16 +10,16 @@ from .collector import Collector as CollectorABC
 from .io import ReadOpenable, PathType, PrimitivePathType, WriteOpenableWrapBinaryIO
 from .params import ensure_multi_iterable, IterableResolvable, ParamsEvaluable, ParamSet, Resolvable, resolve_iterable
 
-_Row = Iterable[str]
-_Rows = Iterable[Iterable[str]]
-_RowResolvable = IterableResolvable[str]
-_RowsResolvable = Union[ParamsEvaluable[_Rows], Iterable[IterableResolvable[str]]]
+_Row = Iterable[Any]
+_Rows = Iterable[Iterable[Any]]
+_RowResolvable = IterableResolvable[Any]
+_RowsResolvable = Union[ParamsEvaluable[_Rows], Iterable[IterableResolvable[Any]]]
 
 def _resolve_rows(rows: _RowsResolvable, params: ParamSet) -> _Rows:
     try:
         return cast('ParamsEvaluable[_Rows]', rows).evaluate_with_params(params)
     except (AttributeError, TypeError):
-        return (resolve_iterable(row, params) for row in cast('Iterable[IterableResolvable[str]]', rows))
+        return (resolve_iterable(row, params) for row in cast('Iterable[IterableResolvable[Any]]', rows))
 
 def _prepare_rows(rows: Optional[_Rows]) -> _Rows:
     if rows is None:
